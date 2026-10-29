@@ -29,8 +29,11 @@ def add_category(name, db_path=DEFAULT_DB_PATH):
 
 def delete_category(category_id, db_path=DEFAULT_DB_PATH):
     with get_connection(db_path) as c:
-        if not c.execute("SELECT 1 FROM categories WHERE id=?", (category_id,)).fetchone():
+        category = c.execute("SELECT name FROM categories WHERE id=?", (category_id,)).fetchone()
+        if category is None:
             return False
+        if category["name"].casefold() == "other":
+            raise ValueError("The default Other category cannot be deleted")
         if (c.execute("SELECT 1 FROM items WHERE category_id=? LIMIT 1", (category_id,)).fetchone()
                 or c.execute("SELECT 1 FROM restock_items WHERE category_id=? LIMIT 1", (category_id,)).fetchone()):
             raise ValueError("Remove this category's catalog and restock items first")
@@ -161,3 +164,4 @@ def delete_customer_credit_records(customer, db_path=DEFAULT_DB_PATH):
         count = c.execute("DELETE FROM credit_records WHERE customer_id=?", (row["id"],)).rowcount
         c.execute("UPDATE customers SET total_paise=0 WHERE id=?", (row["id"],))
         return count
+
