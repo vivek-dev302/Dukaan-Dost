@@ -10,8 +10,10 @@ from fastapi.responses import JSONResponse
 
 from .db_utils import catalog_utils, credit_utils, customer_utils, restock_utils
 from .schemas import CreditInput, CreditUpdate, ItemInput, NameInput
+from .agent import router as agent_router
 
 app = FastAPI(title="Dukaan Dost API", version="0.1.0")
+app.include_router(agent_router, prefix="/agent", tags=["agent"])
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
