@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from agents import Agent, Runner, set_tracing_disabled
+from agents import Agent, RunState, Runner, set_tracing_disabled
 from agents import OpenAIChatCompletionsModel
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -23,7 +23,6 @@ load_dotenv(PROJECT_ROOT / ".env")
 set_tracing_disabled(True)
 
 router = APIRouter()
-_pending_runs: dict[str, tuple[Any, list[Any], int, int]] = {}
 
 
 @lru_cache(maxsize=1)
@@ -74,11 +73,24 @@ def _agent_session(request: Request, user_id: int) -> RedisSession:
     )
 
 
-def _pending_response(result: Any, user_id: int, shop_id: int) -> dict[str, Any]:
+def _pending_run_key(user_id: int, shop_id: int, confirmation_id: str) -> str:
+    return f"dukaandost:pending:{user_id}:{shop_id}:{confirmation_id}"
+
+
+async def _pending_response(
+    result: Any,
+    redis: Any,
+    user_id: int,
+    shop_id: int,
+) -> dict[str, Any]:
     confirmation_id = uuid4().hex
     state = result.to_state()
     interruptions = list(result.interruptions)
-    _pending_runs[confirmation_id] = (state, interruptions, user_id, shop_id)
+    await redis.set(
+        _pending_run_key(user_id, shop_id, confirmation_id),
+        state.to_string(strict_context=True),
+        ex=15 * 60,
+    )
     actions = []
     for interruption in interruptions:
         raw_item = getattr(interruption, "raw_item", None)
@@ -111,7 +123,9 @@ async def chat_with_agent(
         session=session,
     )
     if result.interruptions:
-        return _pending_response(result, user["id"], user["shop_id"])
+        return await _pending_response(
+            result, request.app.state.redis, user["id"], user["shop_id"]
+        )
     return {"status": "completed", "reply": result.final_output}
 
 
@@ -122,13 +136,14 @@ async def confirm_agent_action(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-    pending = _pending_runs.get(confirmation_id)
-    if pending is None:
+    key = _pending_run_key(user["id"], user["shop_id"], confirmation_id)
+    serialized_state = await request.app.state.redis.getdel(key)
+    if serialized_state is None:
         raise HTTPException(status_code=404, detail="Confirmation not found or expired")
-    state, interruptions, owner_id, shop_id = pending
-    if owner_id != user["id"] or shop_id != user["shop_id"]:
-        raise HTTPException(status_code=404, detail="Confirmation not found or expired")
-    _pending_runs.pop(confirmation_id, None)
+    state = await RunState.from_string(
+        get_agent(), serialized_state, strict_context=True
+    )
+    interruptions = state.get_interruptions()
     for interruption in interruptions:
         if decision.approved:
             state.approve(interruption)
@@ -142,5 +157,7 @@ async def confirm_agent_action(
         session=session,
     )
     if result.interruptions:
-        return _pending_response(result, user["id"], user["shop_id"])
+        return await _pending_response(
+            result, request.app.state.redis, user["id"], user["shop_id"]
+        )
     return {"status": "completed", "reply": result.final_output}
