@@ -10,9 +10,10 @@ from uuid import uuid4
 from agents import Agent, Runner, set_tracing_disabled
 from agents import OpenAIChatCompletionsModel
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
+from agents.extensions.memory import RedisSession
 
 from .agent_tools import TOOLS
 from .auth.dependencies import get_current_user
@@ -65,6 +66,14 @@ class AgentApproval(BaseModel):
     approved: bool
 
 
+def _agent_session(request: Request, user_id: int) -> RedisSession:
+    return RedisSession(
+        session_id=f"dukaandost:user:{user_id}",
+        redis_client=request.app.state.redis,
+        ttl=15 * 60,
+    )
+
+
 def _pending_response(result: Any, user_id: int, shop_id: int) -> dict[str, Any]:
     confirmation_id = uuid4().hex
     state = result.to_state()
@@ -89,8 +98,18 @@ def _pending_response(result: Any, user_id: int, shop_id: int) -> dict[str, Any]
 
 
 @router.post("/chat")
-async def chat_with_agent(data: AgentMessage, user: dict = Depends(get_current_user)):
-    result = await Runner.run(get_agent(), data.message, context={"shop_id": user["shop_id"]})
+async def chat_with_agent(
+    data: AgentMessage,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    session = _agent_session(request, user["id"])
+    result = await Runner.run(
+        get_agent(),
+        data.message,
+        context={"shop_id": user["shop_id"]},
+        session=session,
+    )
     if result.interruptions:
         return _pending_response(result, user["id"], user["shop_id"])
     return {"status": "completed", "reply": result.final_output}
@@ -100,6 +119,7 @@ async def chat_with_agent(data: AgentMessage, user: dict = Depends(get_current_u
 async def confirm_agent_action(
     confirmation_id: str,
     decision: AgentApproval,
+    request: Request,
     user: dict = Depends(get_current_user),
 ):
     pending = _pending_runs.get(confirmation_id)
@@ -114,7 +134,13 @@ async def confirm_agent_action(
             state.approve(interruption)
         else:
             state.reject(interruption)
-    result = await Runner.run(get_agent(), state, context={"shop_id": user["shop_id"]})
+    session = _agent_session(request, user["id"])
+    result = await Runner.run(
+        get_agent(),
+        state,
+        context={"shop_id": user["shop_id"]},
+        session=session,
+    )
     if result.interruptions:
         return _pending_response(result, user["id"], user["shop_id"])
     return {"status": "completed", "reply": result.final_output}

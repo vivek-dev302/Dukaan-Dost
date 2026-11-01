@@ -5,3 +5,4 @@ dist/
 dukaandost.db
 .env
 *.bak
+todos.txt

@@ -3,6 +3,7 @@ Run from the project folder with: uvicorn backend.main:app --reload
 """
 import sqlite3
 import os
+from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from redis.asyncio import Redis
 
 from .db_utils import catalog_utils, credit_utils, customer_utils, restock_utils
 from .schemas import CreditInput, CreditUpdate, ItemInput, NameInput
@@ -20,7 +22,18 @@ from .auth.dependencies import get_current_user
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
 
-app = FastAPI(title="Dukaan Dost API", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    app.state.redis = Redis.from_url(redis_url, decode_responses=True)
+    try:
+        await app.state.redis.ping()
+        yield
+    finally:
+        await app.state.redis.aclose()
+
+
+app = FastAPI(title="Dukaan Dost API", version="0.1.0", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(agent_router, prefix="/agent", tags=["agent"])
 FRONTEND_ORIGINS = [
