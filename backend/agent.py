@@ -10,18 +10,19 @@ from uuid import uuid4
 from agents import Agent, Runner, set_tracing_disabled
 from agents import OpenAIChatCompletionsModel
 from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from .agent_tools import TOOLS
+from .auth.dependencies import get_current_user
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
 set_tracing_disabled(True)
 
 router = APIRouter()
-_pending_runs: dict[str, tuple[Any, list[Any]]] = {}
+_pending_runs: dict[str, tuple[Any, list[Any], int, int]] = {}
 
 
 @lru_cache(maxsize=1)
@@ -64,11 +65,11 @@ class AgentApproval(BaseModel):
     approved: bool
 
 
-def _pending_response(result: Any) -> dict[str, Any]:
+def _pending_response(result: Any, user_id: int, shop_id: int) -> dict[str, Any]:
     confirmation_id = uuid4().hex
     state = result.to_state()
     interruptions = list(result.interruptions)
-    _pending_runs[confirmation_id] = (state, interruptions)
+    _pending_runs[confirmation_id] = (state, interruptions, user_id, shop_id)
     actions = []
     for interruption in interruptions:
         raw_item = getattr(interruption, "raw_item", None)
@@ -88,25 +89,32 @@ def _pending_response(result: Any) -> dict[str, Any]:
 
 
 @router.post("/chat")
-async def chat_with_agent(data: AgentMessage):
-    result = await Runner.run(get_agent(), data.message)
+async def chat_with_agent(data: AgentMessage, user: dict = Depends(get_current_user)):
+    result = await Runner.run(get_agent(), data.message, context={"shop_id": user["shop_id"]})
     if result.interruptions:
-        return _pending_response(result)
+        return _pending_response(result, user["id"], user["shop_id"])
     return {"status": "completed", "reply": result.final_output}
 
 
 @router.post("/confirm/{confirmation_id}")
-async def confirm_agent_action(confirmation_id: str, decision: AgentApproval):
-    pending = _pending_runs.pop(confirmation_id, None)
+async def confirm_agent_action(
+    confirmation_id: str,
+    decision: AgentApproval,
+    user: dict = Depends(get_current_user),
+):
+    pending = _pending_runs.get(confirmation_id)
     if pending is None:
         raise HTTPException(status_code=404, detail="Confirmation not found or expired")
-    state, interruptions = pending
+    state, interruptions, owner_id, shop_id = pending
+    if owner_id != user["id"] or shop_id != user["shop_id"]:
+        raise HTTPException(status_code=404, detail="Confirmation not found or expired")
+    _pending_runs.pop(confirmation_id, None)
     for interruption in interruptions:
         if decision.approved:
             state.approve(interruption)
         else:
             state.reject(interruption)
-    result = await Runner.run(get_agent(), state)
+    result = await Runner.run(get_agent(), state, context={"shop_id": user["shop_id"]})
     if result.interruptions:
-        return _pending_response(result)
+        return _pending_response(result, user["id"], user["shop_id"])
     return {"status": "completed", "reply": result.final_output}

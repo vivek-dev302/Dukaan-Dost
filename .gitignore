@@ -4,3 +4,4 @@ node_modules/
 dist/
 dukaandost.db
 .env
+*.bak

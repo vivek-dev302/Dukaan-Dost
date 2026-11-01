@@ -1,12 +1,17 @@
-const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export async function request(path, options = {}) {
   const response = await fetch(`${API}${path}`, {
     ...options,
+    credentials: "include",
     headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
   });
   const data = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.detail || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const error = new Error(data?.detail || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
