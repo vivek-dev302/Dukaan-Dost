@@ -3,7 +3,7 @@
 from agents import RunContextWrapper, function_tool
 
 from ..db_utils import credit_utils
-from ._helpers import amount_to_paise, current_shop_id, json_result
+from ._helpers import amount_to_paise, current_shop_id, current_user_id, json_result
 
 
 @function_tool
@@ -38,7 +38,12 @@ def add_credit_record(
 ) -> str:
     """Add a khata entry in rupees; the user must approve before it is saved."""
     record_id = credit_utils.add_credit_record(
-        customer, amount_to_paise(amount_rupees), current_shop_id(context), description, entry_date
+        customer,
+        amount_to_paise(amount_rupees),
+        current_shop_id(context),
+        description,
+        entry_date,
+        agent_user_id=current_user_id(context),
     )
     return json_result({"id": record_id, "customer": customer, "amount_rupees": amount_rupees})
 
@@ -61,6 +66,7 @@ def update_credit_record(
         amount_paise=amount_paise,
         entry_date=entry_date,
         description=description,
+        agent_user_id=current_user_id(context),
     )
     return json_result({"updated": updated, "record_id": record_id})
 
@@ -68,11 +74,15 @@ def update_credit_record(
 @function_tool(needs_approval=True)
 def delete_credit_record(context: RunContextWrapper[dict[str, int]], record_id: int) -> str:
     """Delete one khata entry after the user approves this action."""
-    return json_result({"deleted": credit_utils.delete_credit_record(record_id, current_shop_id(context))})
+    return json_result({"deleted": credit_utils.delete_credit_record(
+        record_id, current_shop_id(context), agent_user_id=current_user_id(context)
+    )})
 
 
 @function_tool(needs_approval=True)
 def clear_customer_credit_records(context: RunContextWrapper[dict[str, int]], customer_name: str) -> str:
     """Delete all khata entries for a customer after the user approves this action."""
-    count = credit_utils.delete_customer_credit_records(customer_name, current_shop_id(context))
+    count = credit_utils.delete_customer_credit_records(
+        customer_name, current_shop_id(context), agent_user_id=current_user_id(context)
+    )
     return json_result({"deleted_count": count, "customer": customer_name})

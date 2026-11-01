@@ -119,7 +119,7 @@ async def chat_with_agent(
     result = await Runner.run(
         get_agent(),
         data.message,
-        context={"shop_id": user["shop_id"]},
+        context={"shop_id": user["shop_id"], "user_id": user["id"]},
         session=session,
     )
     if result.interruptions:
@@ -153,7 +153,7 @@ async def confirm_agent_action(
     result = await Runner.run(
         get_agent(),
         state,
-        context={"shop_id": user["shop_id"]},
+        context={"shop_id": user["shop_id"], "user_id": user["id"]},
         session=session,
     )
     if result.interruptions:

@@ -21,3 +21,7 @@ def amount_to_paise(amount_rupees: float) -> int:
 
 def current_shop_id(context: RunContextWrapper[dict[str, int]]) -> int:
     return context.context["shop_id"]
+
+
+def current_user_id(context: RunContextWrapper[dict[str, int]]) -> int:
+    return context.context["user_id"]

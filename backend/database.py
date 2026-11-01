@@ -33,6 +33,14 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS agent_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    description TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
@@ -89,6 +97,8 @@ CREATE INDEX IF NOT EXISTS idx_credit_shop_customer_date
     ON credit_records(shop_id, customer_id, entry_date);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user
     ON auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_agent_logs_user_created
+    ON agent_logs(user_id, created_at DESC, id DESC);
 """
 
 

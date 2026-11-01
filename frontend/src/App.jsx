@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "./components/AppLayout.jsx";
 import { DashboardProvider } from "./context/DashboardContext.jsx";
 import AssistantPage from "./pages/AssistantPage.jsx";
+import AgentLogsPage from "./pages/AgentLogsPage.jsx";
 import ItemsPage from "./pages/ItemsPage.jsx";
 import KhataPage from "./pages/KhataPage.jsx";
 import OverviewPage from "./pages/OverviewPage.jsx";
@@ -31,6 +32,7 @@ function AuthenticatedApp() {
         <Route path="restocking" element={<RestockingPage />} />
         <Route path="khata" element={<KhataPage />} />
         <Route path="assistant" element={<AssistantPage />} />
+        <Route path="agent-logs" element={<AgentLogsPage />} />
         <Route path="not-found" element={<NotFoundPage />} />
         <Route path="*" element={<Navigate to="/not-found" replace />} />
       </Route>

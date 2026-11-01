@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 
-from .db_utils import catalog_utils, credit_utils, customer_utils, restock_utils
+from .db_utils import agent_log_utils, catalog_utils, credit_utils, customer_utils, restock_utils
 from .schemas import CreditInput, CreditUpdate, ItemInput, NameInput
 from .agent import router as agent_router
 from .auth.auth import router as auth_router
@@ -77,6 +77,15 @@ async def value_error_handler(request: Request, exc: ValueError):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/agent-logs")
+def list_agent_logs(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    user: dict = Depends(get_current_user),
+):
+    return agent_log_utils.get_agent_logs(user["id"], limit=limit, offset=offset)
 
 
 @app.get("/categories")

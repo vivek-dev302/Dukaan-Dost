@@ -5,7 +5,7 @@ import EditCreditModal from "./EditCreditModal.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const navigation = [
-  ["Overview", "/"], ["Items", "/items"], ["Restocking", "/restocking"], ["Khata", "/khata"], ["Assistant", "/assistant"],
+  ["Overview", "/"], ["Items", "/items"], ["Restocking", "/restocking"], ["Khata", "/khata"], ["Assistant", "/assistant"], ["Agent activity", "/agent-logs"],
 ];
 
 export default function AppLayout() {
