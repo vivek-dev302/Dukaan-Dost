@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { request, rupeesToPaise, today } from "../api/client.js";
 
 const DashboardContext = createContext(null);
@@ -9,6 +9,8 @@ export function DashboardProvider({ children }) {
   const [restock, setRestock] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [records, setRecords] = useState([]);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [recordDate, setRecordDate] = useState("");
   const [notice, setNotice] = useState("");
@@ -33,6 +35,7 @@ export function DashboardProvider({ children }) {
   const [pendingConfirmation, setPendingConfirmation] = useState(null);
   const [chatBusy, setChatBusy] = useState(false);
   const [chatError, setChatError] = useState("");
+  const firstRecordsEffect = useRef(true);
 
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
   const filteredItems = itemFilter === "all" ? items : items.filter((item) => item.category_id === Number(itemFilter));
@@ -58,10 +61,21 @@ export function DashboardProvider({ children }) {
     setRecords(await request(`/credit-records${params.size ? `?${params}` : ""}`));
   }
 
-  useEffect(() => { refreshData().catch((reason) => setError(reason.message)); }, []);
-  useEffect(() => { refreshRecords().catch((reason) => setError(reason.message)); }, [selectedCustomerId, recordDate]);
+  useEffect(() => {
+    Promise.all([refreshData(), refreshRecords()])
+      .catch((reason) => setError(reason.message))
+      .finally(() => setInitialLoading(false));
+  }, []);
+  useEffect(() => {
+    if (firstRecordsEffect.current) {
+      firstRecordsEffect.current = false;
+      return;
+    }
+    refreshRecords().catch((reason) => setError(reason.message));
+  }, [selectedCustomerId, recordDate]);
 
   async function perform(action, successMessage) {
+    setSaving(true);
     setError("");
     setNotice("");
     try {
@@ -69,6 +83,7 @@ export function DashboardProvider({ children }) {
       await Promise.all([refreshData(), refreshRecords()]);
       setNotice(successMessage);
     } catch (reason) { setError(reason.message); }
+    finally { setSaving(false); }
   }
 
   function addCategory(event) {
@@ -174,7 +189,7 @@ export function DashboardProvider({ children }) {
   }
 
   const value = {
-    categories, items, restock, customers, records, selectedCustomerId, setSelectedCustomerId, recordDate, setRecordDate,
+    categories, items, restock, customers, records, initialLoading, saving, selectedCustomerId, setSelectedCustomerId, recordDate, setRecordDate,
     notice, error, setNotice, setError, categoryName, setCategoryName, itemFilter, setItemFilter, restockFilter, setRestockFilter,
     itemName, setItemName, itemCategory, setItemCategory, restockName, setRestockName, restockCategory, setRestockCategory,
     newCustomer, setNewCustomer, creditCustomer, setCreditCustomer, creditAmount, setCreditAmount,

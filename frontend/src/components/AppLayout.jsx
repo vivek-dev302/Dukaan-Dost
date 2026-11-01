@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useDashboard } from "../context/DashboardContext.jsx";
 import EditCreditModal from "./EditCreditModal.jsx";
@@ -11,18 +11,48 @@ const navigation = [
 export default function AppLayout() {
   const { notice, error, setNotice, setError } = useDashboard();
   const { user, logout } = useAuth();
-  return <main className="app-shell">
+  const toastMessage = error || notice;
+
+  useEffect(() => {
+    if (!toastMessage) return undefined;
+    const timer = window.setTimeout(() => {
+      setError("");
+      setNotice("");
+    }, error ? 6500 : 3500);
+    return () => window.clearTimeout(timer);
+  }, [toastMessage, error, setError, setNotice]);
+
+  return <div className="app-shell">
+    <a className="skip-link" href="#main-content">Skip to content</a>
     <header className="topbar">
-      <div><h1>Dukaan Dost</h1><p>Shop dashboard · {user?.name}</p></div>
-      <nav aria-label="Main navigation">
-        {navigation.map(([name, path]) => <NavLink key={path} to={path} end={path === "/"} className={({ isActive }) => isActive ? "active" : ""}>{name}</NavLink>)}
-        <button className="secondary" onClick={() => logout()}>Sign out</button>
-      </nav>
+      <div className="topbar-inner">
+        <div className="brand-lockup">
+          <span className="brand-mark" aria-hidden="true">दु</span>
+          <div><h1>Dukaan Dost</h1><span className="brand-caption">Your shop, in order</span></div>
+        </div>
+        <div className="account-tools">
+          <span className="account-indicator" aria-hidden="true" />
+          <div className="account-name"><small>Shopkeeper</small><strong>{user?.name}</strong></div>
+          <button className="sign-out" onClick={() => logout()}>Sign out</button>
+        </div>
+      </div>
     </header>
-    {(notice || error) && <div className={error ? "message error" : "message"} role="status">
-      {error || notice}<button onClick={() => { setError(""); setNotice(""); }}>Dismiss</button>
-    </div>}
-    <Outlet />
+    <nav className="primary-nav" aria-label="Main navigation">
+      <div className="nav-inner">
+        {navigation.map(([name, path], index) => <NavLink
+          key={path} to={path} end={path === "/"} data-index={String(index + 1).padStart(2, "0")}
+          className={({ isActive }) => isActive ? "active" : ""}
+        >{name}</NavLink>)}
+      </div>
+    </nav>
+    <div className="content-wrap">
+      {toastMessage && <div className={error ? "toast toast-error" : "toast"} role={error ? "alert" : "status"}>
+        <span className="toast-mark" aria-hidden="true">{error ? "!" : "✓"}</span>
+        <span className="toast-copy">{toastMessage}</span>
+        <button className="toast-dismiss" aria-label="Dismiss notification" onClick={() => { setError(""); setNotice(""); }}>×</button>
+      </div>}
+      <main className="page-content" id="main-content"><Outlet /></main>
+    </div>
     <EditCreditModal />
-  </main>;
+  </div>;
 }

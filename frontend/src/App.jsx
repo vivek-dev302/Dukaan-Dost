@@ -1,6 +1,7 @@
 import React from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "./components/AppLayout.jsx";
+import PageHeader from "./components/PageHeader.jsx";
 import { DashboardProvider } from "./context/DashboardContext.jsx";
 import AssistantPage from "./pages/AssistantPage.jsx";
 import AgentLogsPage from "./pages/AgentLogsPage.jsx";
@@ -12,7 +13,7 @@ import LoginPage from "./pages/LoginPage.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 
 function NotFoundPage() {
-  return <section><h2>Page not found</h2><p>The page you requested does not exist.</p></section>;
+  return <section><PageHeader eyebrow="Wrong turn" title="Page not found" description="That page isn’t in this shop book." action={<Link className="button-link" to="/">Back to overview</Link>} /></section>;
 }
 
 export default function App() {
@@ -21,7 +22,11 @@ export default function App() {
 
 function AuthenticatedApp() {
   const { user, loading } = useAuth();
-  if (loading) return <main className="app-shell"><p>Checking sign-in…</p></main>;
+  if (loading) return <main className="login-screen"><section className="login-panel">
+    <div className="brand-lockup login-brand"><span className="brand-mark" aria-hidden="true">दु</span>
+      <div><h1>Dukaan Dost</h1><span className="brand-caption">Your shop, in order</span></div></div>
+    <span className="eyebrow">Opening your shop book</span><p className="muted-copy">Checking your sign-in…</p>
+  </section></main>;
   if (!user) return <LoginPage />;
 
   return <DashboardProvider>
