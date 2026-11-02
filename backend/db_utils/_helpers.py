@@ -10,12 +10,12 @@ def clean_text(value: str, field: str) -> str:
 
 def ensure_customer(connection: Any, name: str, shop_id: int) -> int:
     connection.execute(
-        "INSERT INTO customers (name, shop_id) VALUES (?, ?) "
-        "ON CONFLICT(shop_id, name) DO NOTHING",
+        "INSERT INTO customers (name, shop_id) VALUES (%s, %s) "
+        "ON CONFLICT DO NOTHING",
         (name, shop_id),
     )
     row = connection.execute(
-        "SELECT id FROM customers WHERE name = ? COLLATE NOCASE AND shop_id = ?",
+        "SELECT id FROM customers WHERE lower(name) = lower(%s) AND shop_id = %s",
         (name, shop_id),
     ).fetchone()
     return int(row["id"])

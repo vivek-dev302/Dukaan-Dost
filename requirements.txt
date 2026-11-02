@@ -3,3 +3,4 @@ uvicorn[standard]
 openai-agents[redis]
 python-dotenv
 google-auth
+psycopg[binary]

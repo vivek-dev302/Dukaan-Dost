@@ -22,7 +22,7 @@ export default function App() {
 
 function AuthenticatedApp() {
   const { user, loading } = useAuth();
-  if (loading) return <main className="login-screen"><section className="login-panel">
+  if (loading) return <main className="login-screen login-loading-screen"><section className="login-panel login-loading-panel">
     <div className="brand-lockup login-brand"><span className="brand-mark" aria-hidden="true">दु</span>
       <div><h1>Dukaan Dost</h1><span className="brand-caption">Your shop, in order</span></div></div>
     <span className="eyebrow">Opening your shop book</span><p className="muted-copy">Checking your sign-in…</p>

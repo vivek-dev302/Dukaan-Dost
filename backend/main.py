@@ -1,7 +1,6 @@
 """FastAPI application for the Dukaan Dost dashboard.
 Run from the project folder with: uvicorn backend.main:app --reload
 """
-import sqlite3
 import os
 from contextlib import asynccontextmanager
 from datetime import date
@@ -11,6 +10,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import psycopg
 from redis.asyncio import Redis
 
 from .db_utils import agent_log_utils, catalog_utils, credit_utils, customer_utils, restock_utils
@@ -18,12 +18,14 @@ from .schemas import CreditInput, CreditUpdate, ItemInput, NameInput
 from .agent import router as agent_router
 from .auth.auth import router as auth_router
 from .auth.dependencies import get_current_user
+from .database import init_db
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_db()
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     app.state.redis = Redis.from_url(redis_url, decode_responses=True)
     try:
@@ -61,8 +63,8 @@ async def check_browser_origin(request: Request, call_next):
     return await call_next(request)
 
 
-@app.exception_handler(sqlite3.IntegrityError)
-async def integrity_error_handler(request: Request, exc: sqlite3.IntegrityError):
+@app.exception_handler(psycopg.IntegrityError)
+async def integrity_error_handler(request: Request, exc: psycopg.IntegrityError):
     return JSONResponse(
         status_code=409,
         content={"detail": "This conflicts with existing data or references an unknown category/customer"},

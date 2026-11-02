@@ -1,10 +1,9 @@
 """Khata credit record database operations."""
 
 from datetime import date
-from pathlib import Path
 from typing import Any
 
-from ..database import DEFAULT_DB_PATH, get_connection
+from ..database import get_connection
 from ._helpers import clean_text, ensure_customer
 from .agent_log_utils import insert_agent_log
 
@@ -15,7 +14,6 @@ def add_credit_record(
     shop_id: int,
     description: str = "",
     entry_date: str | None = None,
-    db_path: str | Path = DEFAULT_DB_PATH,
     *,
     agent_user_id: int | None = None,
 ) -> int:
@@ -23,19 +21,19 @@ def add_credit_record(
     if not isinstance(amount_paise, int) or amount_paise <= 0:
         raise ValueError("amount_paise must be a positive integer")
     entry_date = entry_date or date.today().isoformat()
-    with get_connection(db_path) as connection:
+    with get_connection() as connection:
         customer_id = ensure_customer(connection, customer, shop_id)
         cursor = connection.execute(
             """INSERT INTO credit_records
                (customer_id, amount_paise, entry_date, description, shop_id)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
             (customer_id, amount_paise, entry_date, description.strip(), shop_id),
         )
         connection.execute(
-            "UPDATE customers SET total_paise = total_paise + ? WHERE id = ? AND shop_id = ?",
+            "UPDATE customers SET total_paise = total_paise + %s WHERE id = %s AND shop_id = %s",
             (amount_paise, customer_id, shop_id),
         )
-        record_id = int(cursor.lastrowid)
+        record_id = int(cursor.fetchone()["id"])
         if agent_user_id is not None:
             insert_agent_log(
                 connection,
@@ -50,15 +48,14 @@ def _credit_select(
     shop_id: int,
     where: str = "",
     params: tuple = (),
-    db_path: str | Path = DEFAULT_DB_PATH,
 ) -> list[dict[str, Any]]:
-    with get_connection(db_path) as connection:
+    with get_connection() as connection:
         rows = connection.execute(
             """SELECT cr.id, c.id AS customer_id, c.name AS customer,
                       cr.amount_paise, cr.entry_date, cr.description
                FROM credit_records cr JOIN customers c
                  ON c.id = cr.customer_id AND c.shop_id = cr.shop_id
-               WHERE cr.shop_id = ? """
+               WHERE cr.shop_id = %s """
             + where
             + " ORDER BY cr.entry_date DESC, cr.id DESC",
             (shop_id, *params),
@@ -66,21 +63,21 @@ def _credit_select(
     return [dict(row) for row in rows]
 
 
-def get_all_credit_records(shop_id: int, db_path: str | Path = DEFAULT_DB_PATH) -> list[dict[str, Any]]:
-    return _credit_select(shop_id, db_path=db_path)
+def get_all_credit_records(shop_id: int) -> list[dict[str, Any]]:
+    return _credit_select(shop_id)
 
 
-def get_credit_records_by_date(entry_date: str, shop_id: int, db_path: str | Path = DEFAULT_DB_PATH) -> list[dict[str, Any]]:
-    return _credit_select(shop_id, "AND cr.entry_date = ?", (entry_date,), db_path)
+def get_credit_records_by_date(entry_date: str, shop_id: int) -> list[dict[str, Any]]:
+    return _credit_select(shop_id, "AND cr.entry_date = %s", (entry_date,))
 
 
-def get_credit_records_by_customer(customer: str, shop_id: int, db_path: str | Path = DEFAULT_DB_PATH) -> list[dict[str, Any]]:
+def get_credit_records_by_customer(customer: str, shop_id: int) -> list[dict[str, Any]]:
     customer = clean_text(customer, "Customer name")
-    return _credit_select(shop_id, "AND c.name = ? COLLATE NOCASE", (customer,), db_path)
+    return _credit_select(shop_id, "AND lower(c.name) = lower(%s)", (customer,))
 
 
-def get_credit_records_by_customer_id(customer_id: int, shop_id: int, db_path: str | Path = DEFAULT_DB_PATH) -> list[dict[str, Any]]:
-    return _credit_select(shop_id, "AND c.id = ?", (customer_id,), db_path)
+def get_credit_records_by_customer_id(customer_id: int, shop_id: int) -> list[dict[str, Any]]:
+    return _credit_select(shop_id, "AND c.id = %s", (customer_id,))
 
 
 def update_credit_record(
@@ -91,7 +88,6 @@ def update_credit_record(
     amount_paise: int | None = None,
     entry_date: str | None = None,
     description: str | None = None,
-    db_path: str | Path = DEFAULT_DB_PATH,
     agent_user_id: int | None = None,
 ) -> bool:
     if amount_paise is not None and (not isinstance(amount_paise, int) or amount_paise <= 0):
@@ -99,12 +95,12 @@ def update_credit_record(
     if not any(v is not None for v in (customer, amount_paise, entry_date, description)):
         return False
 
-    with get_connection(db_path) as connection:
+    with get_connection() as connection:
         old = connection.execute(
             """SELECT cr.customer_id, cr.amount_paise, c.name AS customer
                FROM credit_records cr JOIN customers c
                  ON c.id = cr.customer_id AND c.shop_id = cr.shop_id
-               WHERE cr.id = ? AND cr.shop_id = ?""",
+               WHERE cr.id = %s AND cr.shop_id = %s""",
             (record_id, shop_id),
         ).fetchone()
         if old is None:
@@ -124,24 +120,24 @@ def update_credit_record(
         if description is not None:
             fields["description"] = description.strip()
 
-        assignments = ", ".join(f"{column} = ?" for column in fields)
+        assignments = ", ".join(f"{column} = %s" for column in fields)
         connection.execute(
-            f"UPDATE credit_records SET {assignments} WHERE id = ? AND shop_id = ?",
+            f"UPDATE credit_records SET {assignments} WHERE id = %s AND shop_id = %s",
             [*fields.values(), record_id, shop_id],
         )
         new_amount = amount_paise if amount_paise is not None else old_amount
         if old_customer_id == new_customer_id:
             connection.execute(
-                "UPDATE customers SET total_paise = total_paise + ? WHERE id = ? AND shop_id = ?",
+                "UPDATE customers SET total_paise = total_paise + %s WHERE id = %s AND shop_id = %s",
                 (new_amount - old_amount, old_customer_id, shop_id),
             )
         else:
             connection.execute(
-                "UPDATE customers SET total_paise = total_paise - ? WHERE id = ? AND shop_id = ?",
+                "UPDATE customers SET total_paise = total_paise - %s WHERE id = %s AND shop_id = %s",
                 (old_amount, old_customer_id, shop_id),
             )
             connection.execute(
-                "UPDATE customers SET total_paise = total_paise + ? WHERE id = ? AND shop_id = ?",
+                "UPDATE customers SET total_paise = total_paise + %s WHERE id = %s AND shop_id = %s",
                 (new_amount, new_customer_id, shop_id),
             )
         if agent_user_id is not None:
@@ -166,23 +162,22 @@ def update_credit_record(
 def delete_credit_record(
     record_id: int,
     shop_id: int,
-    db_path: str | Path = DEFAULT_DB_PATH,
     *,
     agent_user_id: int | None = None,
 ) -> bool:
-    with get_connection(db_path) as connection:
+    with get_connection() as connection:
         row = connection.execute(
             """SELECT cr.customer_id, cr.amount_paise, c.name AS customer
                FROM credit_records cr JOIN customers c
                  ON c.id = cr.customer_id AND c.shop_id = cr.shop_id
-               WHERE cr.id = ? AND cr.shop_id = ?""",
+               WHERE cr.id = %s AND cr.shop_id = %s""",
             (record_id, shop_id),
         ).fetchone()
         if row is None:
             return False
-        connection.execute("DELETE FROM credit_records WHERE id = ? AND shop_id = ?", (record_id, shop_id))
+        connection.execute("DELETE FROM credit_records WHERE id = %s AND shop_id = %s", (record_id, shop_id))
         connection.execute(
-            "UPDATE customers SET total_paise = total_paise - ? WHERE id = ? AND shop_id = ?",
+            "UPDATE customers SET total_paise = total_paise - %s WHERE id = %s AND shop_id = %s",
             (row["amount_paise"], row["customer_id"], shop_id),
         )
         if agent_user_id is not None:
@@ -198,23 +193,22 @@ def delete_credit_record(
 def delete_customer_credit_records(
     customer: str,
     shop_id: int,
-    db_path: str | Path = DEFAULT_DB_PATH,
     *,
     agent_user_id: int | None = None,
 ) -> int:
     customer = clean_text(customer, "Customer name")
-    with get_connection(db_path) as connection:
+    with get_connection() as connection:
         row = connection.execute(
-            "SELECT id, name FROM customers WHERE name = ? COLLATE NOCASE AND shop_id = ?",
+            "SELECT id, name FROM customers WHERE lower(name) = lower(%s) AND shop_id = %s",
             (customer, shop_id),
         ).fetchone()
         if row is None:
             return 0
         cursor = connection.execute(
-            "DELETE FROM credit_records WHERE customer_id = ? AND shop_id = ?", (row["id"], shop_id)
+            "DELETE FROM credit_records WHERE customer_id = %s AND shop_id = %s", (row["id"], shop_id)
         )
         connection.execute(
-            "UPDATE customers SET total_paise = 0 WHERE id = ? AND shop_id = ?", (row["id"], shop_id)
+            "UPDATE customers SET total_paise = 0 WHERE id = %s AND shop_id = %s", (row["id"], shop_id)
         )
         if cursor.rowcount and agent_user_id is not None:
             insert_agent_log(

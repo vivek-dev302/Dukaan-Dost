@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useDashboard } from "../context/DashboardContext.jsx";
 import EditCreditModal from "./EditCreditModal.jsx";
@@ -11,6 +11,7 @@ const navigation = [
 export default function AppLayout() {
   const { notice, error, setNotice, setError } = useDashboard();
   const { user, logout } = useAuth();
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
   const toastMessage = error || notice;
 
   useEffect(() => {
@@ -21,6 +22,15 @@ export default function AppLayout() {
     }, error ? 6500 : 3500);
     return () => window.clearTimeout(timer);
   }, [toastMessage, error, setError, setNotice]);
+
+  useEffect(() => {
+    if (!confirmingLogout) return undefined;
+    function handleKeyDown(event) {
+      if (event.key === "Escape") setConfirmingLogout(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [confirmingLogout]);
 
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
@@ -33,7 +43,7 @@ export default function AppLayout() {
         <div className="account-tools">
           <span className="account-indicator" aria-hidden="true" />
           <div className="account-name"><small>Shopkeeper</small><strong>{user?.name}</strong></div>
-          <button className="sign-out" onClick={() => logout()}>Sign out</button>
+          <button className="sign-out" onClick={() => setConfirmingLogout(true)}>Sign out</button>
         </div>
       </div>
     </header>
@@ -54,5 +64,16 @@ export default function AppLayout() {
       <main className="page-content" id="main-content"><Outlet /></main>
     </div>
     <EditCreditModal />
+    {confirmingLogout && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirmingLogout(false); }}>
+      <section className="panel logout-dialog" role="dialog" aria-modal="true" aria-labelledby="logout-title" aria-describedby="logout-description">
+        <span className="eyebrow">Dukaan Dost</span>
+        <h2 id="logout-title">Sign out of your shop?</h2>
+        <p id="logout-description">You’ll need to sign in again to open your shop dashboard.</p>
+        <div className="inline-form modal-actions">
+          <button type="button" className="secondary" autoFocus onClick={() => setConfirmingLogout(false)}>Stay signed in</button>
+          <button type="button" className="logout-confirm" onClick={() => logout()}>Sign out</button>
+        </div>
+      </section>
+    </div>}
   </div>;
 }

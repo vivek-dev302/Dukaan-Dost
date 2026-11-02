@@ -1,14 +1,15 @@
 import React, { useState } from "react";
 import { useDashboard } from "../context/DashboardContext.jsx";
 import { money } from "../api/client.js";
+import CreditTable from "../components/CreditTable.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 
 export default function KhataPage() {
   const {
-    customers, initialLoading, saving, selectedCustomerId, selectedCustomer, chooseCustomer, newCustomer, setNewCustomer, addCustomer,
+    customers, records, initialLoading, saving, selectedCustomerId, selectedCustomer, chooseCustomer, setSelectedCustomerId, recordDate, setRecordDate, newCustomer, setNewCustomer, addCustomer,
     creditCustomer, setCreditCustomer, creditAmount, setCreditAmount, creditDate, setCreditDate,
-    creditDescription, setCreditDescription, addCredit,
+    creditDescription, setCreditDescription, addCredit, remove, setEditing,
   } = useDashboard();
   const [customerSearch, setCustomerSearch] = useState("");
   const [showCustomerForm, setShowCustomerForm] = useState(false);
@@ -20,14 +21,27 @@ export default function KhataPage() {
       <div className="workspace-main">
         <div className="panel ledger-panel customer-panel">
           <div className="section-heading">
-            <div><span className="eyebrow">People</span><h3>Customers</h3></div>
+            <div><span className="eyebrow">{selectedCustomer ? "Customer account" : "People"}</span><h3>{selectedCustomer ? selectedCustomer.name : "Customers"}</h3></div>
             <div className="list-heading-actions">
-              <span className="count-mark" aria-label={`${customers.length} customers`}>{initialLoading ? "—" : customers.length}</span>
-              <button type="button" className="secondary compact-button" aria-expanded={showCustomerForm} onClick={() => setShowCustomerForm((open) => !open)}>
-                {showCustomerForm ? "Close" : "+ Customer"}
-              </button>
+              {selectedCustomer ? <>
+                <span className="count-mark" aria-label={`${records.length} credit entries`}>{initialLoading ? "—" : records.length}</span>
+                <button type="button" className="secondary compact-button" onClick={() => { setSelectedCustomerId(null); setRecordDate(""); setCustomerSearch(""); }}>Back to customers</button>
+              </> : <>
+                <span className="count-mark" aria-label={`${customers.length} customers`}>{initialLoading ? "—" : customers.length}</span>
+                <button type="button" className="secondary compact-button" aria-expanded={showCustomerForm} onClick={() => setShowCustomerForm((open) => !open)}>
+                  {showCustomerForm ? "Close" : "+ Customer"}
+                </button>
+              </>}
             </div>
           </div>
+          {selectedCustomer ? <>
+            <div className="customer-record-heading">
+              <span>Credit entries</span>
+              <button className="text-button danger" disabled={saving || !records.length} onClick={() => remove(`/customers/${selectedCustomer.id}/credit-records`, "Customer credit entries cleared.", `Delete all credit entries for ${selectedCustomer.name}?`)}>Clear entries</button>
+            </div>
+            {initialLoading ? <p className="muted-copy">Loading khata entries…</p> : <CreditTable records={records} saving={saving} onEdit={setEditing}
+              onDelete={(id) => remove(`/credit-records/${id}`, "Credit entry deleted.", "Delete this credit entry?")} />}
+          </> : <>
           {showCustomerForm && <form onSubmit={addCustomer} className="inline-create-form">
             <label className="sr-only" htmlFor="new-customer-name">Customer name</label>
             <input id="new-customer-name" required value={newCustomer} onChange={(event) => setNewCustomer(event.target.value)} placeholder="New customer name" autoFocus />
@@ -46,6 +60,7 @@ export default function KhataPage() {
                 <strong>{money(customer.total_paise)}</strong>
               </button>
             </li>)}</ul>}
+          </>}
         </div>
       </div>
       <aside className="workspace-aside">
