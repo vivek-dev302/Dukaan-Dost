@@ -1,10 +1,11 @@
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export async function request(path, options = {}) {
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(`${API}${path}`, {
     ...options,
     credentials: "include",
-    headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
+    headers: { ...(options.body && !isFormData ? { "Content-Type": "application/json" } : {}), ...options.headers },
   });
   const data = response.status === 204 ? null : await response.json().catch(() => null);
   if (!response.ok) {
@@ -13,6 +14,20 @@ export async function request(path, options = {}) {
     throw error;
   }
   return data;
+}
+
+export async function requestAudio(path, body) {
+  const response = await fetch(`${API}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.detail || `Request failed (${response.status})`);
+  }
+  return response.blob();
 }
 
 export function money(paise = 0) {

@@ -6,3 +6,5 @@ google-auth
 psycopg[binary]
 sqlalchemy
 alembic
+sarvamai
+python-multipart

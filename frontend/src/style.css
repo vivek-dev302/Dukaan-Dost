@@ -231,7 +231,20 @@ tbody tr:hover { background: #f8f6f0; }
 .chat-form { display: flex; gap: 9px; border-top: 1px solid var(--line); padding: 15px 18px; background: #f8f6ef; }
 .chat-form input { min-height: 46px; flex: 1; border-color: #d8d2c5; background: #fffdf9; }
 .chat-form button { display: inline-flex; min-width: 92px; align-items: center; justify-content: center; gap: 10px; }
+.mic-button { width: 46px; min-width: 46px !important; padding: 9px !important; }
+.mic-button svg, .voice-mic svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .assistant-footnote { margin: 0; border-top: 1px solid #e9e5dc; padding: 10px 18px 12px; color: #81857b; font-size: 10px; text-align: center; }
+.voice-overlay { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 18px; background: rgb(23 32 27 / 45%); }
+.voice-dialog { position: relative; width: min(100%, 420px); border: 1px solid var(--line); border-radius: 10px; padding: 30px 24px 22px; background: var(--surface); box-shadow: 0 18px 60px rgb(20 30 25 / 20%); text-align: center; }
+.voice-close { position: absolute; top: 8px; right: 10px; color: var(--muted); font-size: 22px; }
+.voice-mic { display: grid; width: 54px; height: 54px; place-items: center; margin: 0 auto 14px; border-radius: 50%; color: var(--forest); background: #edf2e9; }
+.voice-mic.is-recording { color: #fff; background: var(--danger); animation: breathe 1.1s ease-in-out infinite alternate; }
+.voice-mic svg { width: 25px; height: 25px; }
+.voice-dialog h2 { margin: 0 0 7px; font-family: "Newsreader", Georgia, serif; font-size: 25px; font-weight: 500; }
+.voice-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.voice-transcript { margin: 14px 0 0; padding: 10px 12px; border-radius: 7px; background: #f3f1e9; font-size: 13px; line-height: 1.5; }
+.voice-error { margin: 12px 0 0; }
+.voice-actions { display: flex; justify-content: center; gap: 9px; flex-wrap: wrap; margin-top: 19px; }
 
 /* Sign-in and modal */
 .login-screen { height: 100dvh; overflow: hidden; background: var(--paper); }

@@ -1,6 +1,7 @@
 import React from "react";
 import { useDashboard } from "../context/DashboardContext.jsx";
 import PageHeader from "../components/PageHeader.jsx";
+import VoiceCallButton from "../components/VoiceCallButton.jsx";
 
 const suggestions = ["What is on my restocking list?", "Show today's khata entries"];
 
@@ -11,6 +12,7 @@ function readableLabel(value) {
 export default function AssistantPage() {
   const { chatMessages, chatInput, setChatInput, pendingConfirmation, chatBusy, chatError,
     sendChatMessage, decideChatAction } = useDashboard();
+
   return <section>
     <PageHeader eyebrow="A helping hand at the counter" title="Shop assistant" description="Ask about your shop or give a task. Changes to your records wait for your approval." />
     <div className="panel assistant-panel">
@@ -48,6 +50,7 @@ export default function AssistantPage() {
           onChange={(event) => setChatInput(event.target.value)}
           placeholder="Write a message to your assistant…"
           disabled={chatBusy || Boolean(pendingConfirmation)} />
+        <VoiceCallButton />
         <button aria-label="Send message" disabled={chatBusy || Boolean(pendingConfirmation) || !chatInput.trim()}><span>Send</span><span aria-hidden="true">↗</span></button>
       </form>
       <p className="assistant-footnote">Your shop data stays in your account. You’ll be asked before a protected change is made.</p>

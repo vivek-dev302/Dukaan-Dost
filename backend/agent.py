@@ -41,19 +41,14 @@ def get_agent() -> Agent:
         model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash"),
         openai_client=client,
     )
+    system_prompt = Path(__file__).with_name("system_prompt.txt").read_text(
+        encoding="utf-8"
+    ).strip()
     return Agent(
         name="Dukaan Dost assistant",
         model=model,
         tools=TOOLS,
-        instructions=(
-            "You help a shopkeeper manage one shop. Use the provided tools for all shop data; "
-            "never invent records or claim an action succeeded unless a tool confirms it. "
-            "The catalog is optional, and restock items may be independent of it. "
-            "Amounts the user speaks or types are rupees. Ask a short clarifying question "
-            "when the customer, item, amount, date, or requested change is ambiguous. "
-            "Every deletion and every khata entry creation, edit, or deletion requires the "
-            "SDK approval step; do not claim it is complete while approval is pending."
-        ),
+        instructions=system_prompt,
     )
 
 
@@ -115,10 +110,15 @@ async def chat_with_agent(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
+    return await run_agent_message(data.message, request, user)
+
+
+async def run_agent_message(message: str, request: Request, user: dict) -> dict[str, Any]:
+    """Run a message through the user's existing Redis-backed agent session."""
     session = _agent_session(request, user["id"])
     result = await Runner.run(
         get_agent(),
-        data.message,
+        message,
         context={"shop_id": user["shop_id"], "user_id": user["id"]},
         session=session,
     )

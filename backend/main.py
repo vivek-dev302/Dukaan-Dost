@@ -17,6 +17,7 @@ from .db_utils import agent_log_utils, catalog_utils, credit_utils, customer_uti
 from .schemas import CreditInput, CreditUpdate, ItemInput, NameInput
 from .agent import router as agent_router
 from .auth.auth import router as auth_router
+from .speech import router as speech_router
 from .auth.dependencies import get_current_user
 from .database import engine
 
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Dukaan Dost API", version="0.1.0", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(agent_router, prefix="/agent", tags=["agent"])
+app.include_router(speech_router)
 FRONTEND_ORIGINS = [
     origin.strip()
     for origin in os.getenv(

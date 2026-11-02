@@ -152,9 +152,9 @@ export function DashboardProvider({ children }) {
     setRecordDate("");
   }
 
-  async function sendChatMessage(event) {
-    event.preventDefault();
-    const message = chatInput.trim();
+  async function sendChatMessage(eventOrMessage) {
+    eventOrMessage?.preventDefault?.();
+    const message = (typeof eventOrMessage === "string" ? eventOrMessage : chatInput).trim();
     if (!message || chatBusy || pendingConfirmation) return;
     setChatInput("");
     setChatError("");
@@ -168,10 +168,47 @@ export function DashboardProvider({ children }) {
     finally { setChatBusy(false); }
   }
 
-  async function decideChatAction(approved) {
-    if (!pendingConfirmation || chatBusy) return;
+  async function sendVoiceCommand(audioFormData) {
+    if (chatBusy || pendingConfirmation) return false;
+    setChatInput("");
+    setChatError("");
+    setChatBusy(true);
+    try {
+      const result = await request("/speech/command", {
+        method: "POST",
+        body: audioFormData,
+      });
+      const transcript = result.transcript?.trim();
+      if (!transcript) throw new Error("I could not make out the recording. Please try again.");
+
+      if (result.status === "confirmation_required") {
+        setChatMessages((current) => [...current, { role: "user", text: transcript, source: "voice" }]);
+        setPendingConfirmation(result);
+      } else if (result.status === "completed" && result.reply) {
+        setChatMessages((current) => [
+          ...current,
+          { role: "user", text: transcript, source: "voice" },
+          { role: "assistant", text: result.reply, source: "voice" },
+        ]);
+      } else {
+        throw new Error("The assistant returned an unexpected response.");
+      }
+      return result;
+    } catch (reason) {
+      setChatError(reason.message);
+      return null;
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
+  async function decideChatAction(approved, userUtterance = "", source = "chat") {
+    if (!pendingConfirmation || chatBusy) return null;
     setChatBusy(true);
     setChatError("");
+    if (userUtterance) {
+      setChatMessages((current) => [...current, { role: "user", text: userUtterance, source }]);
+    }
     try {
       const result = await request(`/agent/confirm/${pendingConfirmation.confirmation_id}`, {
         method: "POST", body: JSON.stringify({ approved }),
@@ -179,13 +216,18 @@ export function DashboardProvider({ children }) {
       if (result.status === "confirmation_required") setPendingConfirmation(result);
       else {
         setPendingConfirmation(null);
-        setChatMessages((current) => [...current, { role: "assistant", text: result.reply }]);
+        setChatMessages((current) => [...current, { role: "assistant", text: result.reply, source }]);
         if (approved) await Promise.all([refreshData(), refreshRecords()]);
       }
+      return result;
     } catch (reason) {
       setChatError(reason.message);
-      setPendingConfirmation(null);
+      return null;
     } finally { setChatBusy(false); }
+  }
+
+  function addChatUserMessage(text, source = "chat") {
+    setChatMessages((current) => [...current, { role: "user", text, source }]);
   }
 
   const value = {
@@ -196,7 +238,8 @@ export function DashboardProvider({ children }) {
     creditDescription, setCreditDescription, creditDate, setCreditDate, editing, setEditing, selectedCustomer,
     filteredItems, filteredRestock, addCategory, addCatalogItem, addRestockItem, addCustomer, addCredit, saveEdit,
     remove, chooseCustomer, chatMessages, chatInput, setChatInput, pendingConfirmation, chatBusy, chatError,
-    sendChatMessage, decideChatAction, refreshData, refreshRecords,
+    sendChatMessage, sendVoiceCommand, decideChatAction, addChatUserMessage,
+    refreshData, refreshRecords,
   };
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;
