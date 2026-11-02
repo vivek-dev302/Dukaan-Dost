@@ -1,4 +1,4 @@
-"""Direct-SQL account and session operations."""
+"""Google account and application-session operations."""
 
 import hashlib
 import os
@@ -7,11 +7,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2 import id_token
-from dotenv import load_dotenv
+from sqlalchemy import delete, func, select
 
-from ..database import get_connection
+from ..database import SessionLocal
+from ..models import AuthSession, Category, Shop, User
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
@@ -30,92 +32,78 @@ def verify_google_credential(credential: str) -> dict[str, Any]:
     return claims
 
 
-
 def get_or_create_user(claims: dict[str, Any]) -> dict[str, Any]:
     google_sub = str(claims["sub"])
     email = str(claims["email"])
     name = str(claims.get("name") or email)
     picture = str(claims.get("picture") or "")
 
-    with get_connection() as connection:
-        connection.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (google_sub,)
+    with SessionLocal.begin() as session:
+        session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtextextended(google_sub, 0)))
         )
-
-        row = connection.execute(
-            "SELECT id FROM users WHERE google_sub = %s",
-            (google_sub,)
-        ).fetchone()
-
-        if row is not None:
-            # Existing user: update profile information.
-            user_id = int(row["id"])
-
-            connection.execute(
-                "UPDATE users SET email = %s, name = %s, picture = %s WHERE id = %s",
-                (email, name, picture, user_id),
+        user = session.scalar(select(User).where(User.google_sub == google_sub))
+        if user is None:
+            shop = Shop(name=f"{name}'s Shop")
+            session.add(shop)
+            session.flush()
+            session.add(Category(shop_id=shop.id, name="Other"))
+            user = User(
+                google_sub=google_sub,
+                email=email,
+                name=name,
+                picture=picture,
+                shop_id=shop.id,
             )
-
+            session.add(user)
+            session.flush()
         else:
-            # New user: create a completely new, empty shop.
-            row = connection.execute(
-                "INSERT INTO shops (name) VALUES (%s) RETURNING id",
-                (f"{name}'s Shop",),
-            ).fetchone()
-            shop_id = int(row["id"])
+            user.email = email
+            user.name = name
+            user.picture = picture
 
-            # Create the default category for the new shop.
-            connection.execute(
-                "INSERT INTO categories (shop_id, name) VALUES (%s, 'Other')",
-                (shop_id,),
-            )
-
-            # Create the user and associate the new shop.
-            row = connection.execute(
-                "INSERT INTO users (google_sub, email, name, picture, shop_id) "
-                "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-                (google_sub, email, name, picture, shop_id),
-            ).fetchone()
-
-            user_id = int(row["id"])
-
-        user = connection.execute(
-            "SELECT id, email, name, picture, shop_id "
-            "FROM users WHERE id = %s",
-            (user_id,),
-        ).fetchone()
-
-        return dict(user)
-
+        result = {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "picture": user.picture,
+            "shop_id": user.shop_id,
+        }
+    return result
 
 
 def create_session(user_id: int) -> tuple[str, int]:
     token = secrets.token_urlsafe(32)
     expires_at = int(time.time()) + SESSION_TTL_SECONDS
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    with get_connection() as connection:
-        connection.execute("DELETE FROM auth_sessions WHERE expires_at <= %s", (int(time.time()),))
-        connection.execute(
-            "INSERT INTO auth_sessions (token_hash, user_id, expires_at, created_at) "
-            "VALUES (%s, %s, %s, %s)",
-            (token_hash, user_id, expires_at, int(time.time())),
+    with SessionLocal.begin() as session:
+        session.execute(delete(AuthSession).where(AuthSession.expires_at <= int(time.time())))
+        session.add(
+            AuthSession(
+                token_hash=token_hash,
+                user_id=user_id,
+                expires_at=expires_at,
+                created_at=int(time.time()),
+            )
         )
     return token, expires_at
 
 
 def get_user_for_session(token: str) -> dict[str, Any] | None:
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    with get_connection() as connection:
-        row = connection.execute(
-            """SELECT u.id, u.email, u.name, u.picture, u.shop_id
-               FROM auth_sessions s JOIN users u ON u.id = s.user_id
-               WHERE s.token_hash = %s AND s.expires_at > %s""",
-            (token_hash, int(time.time())),
-        ).fetchone()
+    with SessionLocal() as session:
+        row = session.execute(
+            select(User.id, User.email, User.name, User.picture, User.shop_id)
+            .join(AuthSession, AuthSession.user_id == User.id)
+            .where(
+                AuthSession.token_hash == token_hash,
+                AuthSession.expires_at > int(time.time()),
+            )
+        ).mappings().first()
     return dict(row) if row else None
 
 
 def revoke_session(token: str) -> None:
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    with get_connection() as connection:
-        connection.execute("DELETE FROM auth_sessions WHERE token_hash = %s", (token_hash,))
+    with SessionLocal.begin() as session:
+        session.execute(delete(AuthSession).where(AuthSession.token_hash == token_hash))

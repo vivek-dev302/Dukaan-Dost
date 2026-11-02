@@ -3,7 +3,10 @@
 from datetime import date
 from typing import Any
 
-from ..database import get_connection
+from sqlalchemy import and_, delete, func, select
+
+from ..database import SessionLocal
+from ..models import CreditRecord, Customer
 from ._helpers import clean_text, ensure_customer
 from .agent_log_utils import insert_agent_log
 
@@ -21,45 +24,50 @@ def add_credit_record(
     if not isinstance(amount_paise, int) or amount_paise <= 0:
         raise ValueError("amount_paise must be a positive integer")
     entry_date = entry_date or date.today().isoformat()
-    with get_connection() as connection:
-        customer_id = ensure_customer(connection, customer, shop_id)
-        cursor = connection.execute(
-            """INSERT INTO credit_records
-               (customer_id, amount_paise, entry_date, description, shop_id)
-               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-            (customer_id, amount_paise, entry_date, description.strip(), shop_id),
+    with SessionLocal.begin() as session:
+        customer_id = ensure_customer(session, customer, shop_id)
+        customer_row = session.get(Customer, customer_id)
+        customer_row.total_paise += amount_paise
+        record = CreditRecord(
+            customer_id=customer_id,
+            amount_paise=amount_paise,
+            entry_date=entry_date,
+            description=description.strip(),
+            shop_id=shop_id,
         )
-        connection.execute(
-            "UPDATE customers SET total_paise = total_paise + %s WHERE id = %s AND shop_id = %s",
-            (amount_paise, customer_id, shop_id),
-        )
-        record_id = int(cursor.fetchone()["id"])
+        session.add(record)
+        session.flush()
         if agent_user_id is not None:
             insert_agent_log(
-                connection,
+                session,
                 agent_user_id,
                 "credit_record.added",
-                f"Added credit entry #{record_id} for {customer}: ₹{amount_paise / 100:.2f}.",
+                f"Added credit entry #{record.id} for {customer}: ₹{amount_paise / 100:.2f}.",
             )
-        return record_id
+        return record.id
 
 
-def _credit_select(
-    shop_id: int,
-    where: str = "",
-    params: tuple = (),
-) -> list[dict[str, Any]]:
-    with get_connection() as connection:
-        rows = connection.execute(
-            """SELECT cr.id, c.id AS customer_id, c.name AS customer,
-                      cr.amount_paise, cr.entry_date, cr.description
-               FROM credit_records cr JOIN customers c
-                 ON c.id = cr.customer_id AND c.shop_id = cr.shop_id
-               WHERE cr.shop_id = %s """
-            + where
-            + " ORDER BY cr.entry_date DESC, cr.id DESC",
-            (shop_id, *params),
-        ).fetchall()
+def _credit_select(shop_id: int, *filters: Any) -> list[dict[str, Any]]:
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(
+                CreditRecord.id,
+                Customer.id.label("customer_id"),
+                Customer.name.label("customer"),
+                CreditRecord.amount_paise,
+                CreditRecord.entry_date,
+                CreditRecord.description,
+            )
+            .join(
+                Customer,
+                and_(
+                    Customer.id == CreditRecord.customer_id,
+                    Customer.shop_id == CreditRecord.shop_id,
+                ),
+            )
+            .where(CreditRecord.shop_id == shop_id, *filters)
+            .order_by(CreditRecord.entry_date.desc(), CreditRecord.id.desc())
+        ).mappings().all()
     return [dict(row) for row in rows]
 
 
@@ -68,16 +76,18 @@ def get_all_credit_records(shop_id: int) -> list[dict[str, Any]]:
 
 
 def get_credit_records_by_date(entry_date: str, shop_id: int) -> list[dict[str, Any]]:
-    return _credit_select(shop_id, "AND cr.entry_date = %s", (entry_date,))
+    return _credit_select(shop_id, CreditRecord.entry_date == entry_date)
 
 
 def get_credit_records_by_customer(customer: str, shop_id: int) -> list[dict[str, Any]]:
     customer = clean_text(customer, "Customer name")
-    return _credit_select(shop_id, "AND lower(c.name) = lower(%s)", (customer,))
+    return _credit_select(
+        shop_id, func.lower(Customer.name) == customer.lower()
+    )
 
 
 def get_credit_records_by_customer_id(customer_id: int, shop_id: int) -> list[dict[str, Any]]:
-    return _credit_select(shop_id, "AND c.id = %s", (customer_id,))
+    return _credit_select(shop_id, Customer.id == customer_id)
 
 
 def update_credit_record(
@@ -92,54 +102,42 @@ def update_credit_record(
 ) -> bool:
     if amount_paise is not None and (not isinstance(amount_paise, int) or amount_paise <= 0):
         raise ValueError("amount_paise must be a positive integer")
-    if not any(v is not None for v in (customer, amount_paise, entry_date, description)):
+    if not any(value is not None for value in (customer, amount_paise, entry_date, description)):
         return False
 
-    with get_connection() as connection:
-        old = connection.execute(
-            """SELECT cr.customer_id, cr.amount_paise, c.name AS customer
-               FROM credit_records cr JOIN customers c
-                 ON c.id = cr.customer_id AND c.shop_id = cr.shop_id
-               WHERE cr.id = %s AND cr.shop_id = %s""",
-            (record_id, shop_id),
-        ).fetchone()
-        if old is None:
+    with SessionLocal.begin() as session:
+        record = session.scalar(
+            select(CreditRecord).where(
+                CreditRecord.id == record_id, CreditRecord.shop_id == shop_id
+            )
+        )
+        if record is None:
             return False
 
-        old_customer_id = int(old["customer_id"])
-        old_amount = int(old["amount_paise"])
+        old_customer = session.get(Customer, record.customer_id)
+        old_customer_id = record.customer_id
+        old_amount = record.amount_paise
         new_customer_id = old_customer_id
-        fields: dict[str, Any] = {}
         if customer is not None:
-            new_customer_id = ensure_customer(connection, clean_text(customer, "Customer name"), shop_id)
-            fields["customer_id"] = new_customer_id
+            new_customer_id = ensure_customer(
+                session, clean_text(customer, "Customer name"), shop_id
+            )
+            record.customer_id = new_customer_id
         if amount_paise is not None:
-            fields["amount_paise"] = amount_paise
+            record.amount_paise = amount_paise
         if entry_date is not None:
-            fields["entry_date"] = entry_date
+            record.entry_date = entry_date
         if description is not None:
-            fields["description"] = description.strip()
+            record.description = description.strip()
 
-        assignments = ", ".join(f"{column} = %s" for column in fields)
-        connection.execute(
-            f"UPDATE credit_records SET {assignments} WHERE id = %s AND shop_id = %s",
-            [*fields.values(), record_id, shop_id],
-        )
-        new_amount = amount_paise if amount_paise is not None else old_amount
+        new_amount = record.amount_paise
         if old_customer_id == new_customer_id:
-            connection.execute(
-                "UPDATE customers SET total_paise = total_paise + %s WHERE id = %s AND shop_id = %s",
-                (new_amount - old_amount, old_customer_id, shop_id),
-            )
+            old_customer.total_paise += new_amount - old_amount
         else:
-            connection.execute(
-                "UPDATE customers SET total_paise = total_paise - %s WHERE id = %s AND shop_id = %s",
-                (old_amount, old_customer_id, shop_id),
-            )
-            connection.execute(
-                "UPDATE customers SET total_paise = total_paise + %s WHERE id = %s AND shop_id = %s",
-                (new_amount, new_customer_id, shop_id),
-            )
+            old_customer.total_paise -= old_amount
+            new_customer = session.get(Customer, new_customer_id)
+            new_customer.total_paise += new_amount
+
         if agent_user_id is not None:
             changed_fields = []
             if customer is not None:
@@ -151,10 +149,10 @@ def update_credit_record(
             if description is not None:
                 changed_fields.append("description")
             insert_agent_log(
-                connection,
+                session,
                 agent_user_id,
                 "credit_record.updated",
-                f"Updated credit entry #{record_id} for {customer or old['customer']} ({', '.join(changed_fields)}).",
+                f"Updated credit entry #{record_id} for {customer or old_customer.name} ({', '.join(changed_fields)}).",
             )
         return True
 
@@ -165,27 +163,24 @@ def delete_credit_record(
     *,
     agent_user_id: int | None = None,
 ) -> bool:
-    with get_connection() as connection:
-        row = connection.execute(
-            """SELECT cr.customer_id, cr.amount_paise, c.name AS customer
-               FROM credit_records cr JOIN customers c
-                 ON c.id = cr.customer_id AND c.shop_id = cr.shop_id
-               WHERE cr.id = %s AND cr.shop_id = %s""",
-            (record_id, shop_id),
-        ).fetchone()
-        if row is None:
-            return False
-        connection.execute("DELETE FROM credit_records WHERE id = %s AND shop_id = %s", (record_id, shop_id))
-        connection.execute(
-            "UPDATE customers SET total_paise = total_paise - %s WHERE id = %s AND shop_id = %s",
-            (row["amount_paise"], row["customer_id"], shop_id),
+    with SessionLocal.begin() as session:
+        record = session.scalar(
+            select(CreditRecord).where(
+                CreditRecord.id == record_id, CreditRecord.shop_id == shop_id
+            )
         )
+        if record is None:
+            return False
+        customer = session.get(Customer, record.customer_id)
+        amount_paise = record.amount_paise
+        customer.total_paise -= amount_paise
+        session.delete(record)
         if agent_user_id is not None:
             insert_agent_log(
-                connection,
+                session,
                 agent_user_id,
                 "credit_record.deleted",
-                f"Deleted credit entry #{record_id} for {row['customer']}: ₹{row['amount_paise'] / 100:.2f}.",
+                f"Deleted credit entry #{record_id} for {customer.name}: ₹{amount_paise / 100:.2f}.",
             )
         return True
 
@@ -196,25 +191,34 @@ def delete_customer_credit_records(
     *,
     agent_user_id: int | None = None,
 ) -> int:
-    customer = clean_text(customer, "Customer name")
-    with get_connection() as connection:
-        row = connection.execute(
-            "SELECT id, name FROM customers WHERE lower(name) = lower(%s) AND shop_id = %s",
-            (customer, shop_id),
-        ).fetchone()
-        if row is None:
+    customer_name = clean_text(customer, "Customer name")
+    with SessionLocal.begin() as session:
+        customer_row = session.scalar(
+            select(Customer).where(
+                Customer.shop_id == shop_id,
+                func.lower(Customer.name) == customer_name.lower(),
+            )
+        )
+        if customer_row is None:
             return 0
-        cursor = connection.execute(
-            "DELETE FROM credit_records WHERE customer_id = %s AND shop_id = %s", (row["id"], shop_id)
+        count = session.scalar(
+            select(func.count(CreditRecord.id)).where(
+                CreditRecord.customer_id == customer_row.id,
+                CreditRecord.shop_id == shop_id,
+            )
+        ) or 0
+        session.execute(
+            delete(CreditRecord).where(
+                CreditRecord.customer_id == customer_row.id,
+                CreditRecord.shop_id == shop_id,
+            )
         )
-        connection.execute(
-            "UPDATE customers SET total_paise = 0 WHERE id = %s AND shop_id = %s", (row["id"], shop_id)
-        )
-        if cursor.rowcount and agent_user_id is not None:
+        customer_row.total_paise = 0
+        if count and agent_user_id is not None:
             insert_agent_log(
-                connection,
+                session,
                 agent_user_id,
                 "credit_records.cleared",
-                f"Deleted {cursor.rowcount} credit entr{'y' if cursor.rowcount == 1 else 'ies'} for {row['name']}.",
+                f"Deleted {count} credit entr{'y' if count == 1 else 'ies'} for {customer_row.name}.",
             )
-        return cursor.rowcount
+        return count

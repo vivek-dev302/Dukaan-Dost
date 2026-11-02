@@ -1,5 +1,10 @@
 """Shared helpers for database utility modules."""
-from typing import Any
+
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
+
+from ..models import Customer
 
 
 def clean_text(value: str, field: str) -> str:
@@ -8,14 +13,16 @@ def clean_text(value: str, field: str) -> str:
     return value.strip()
 
 
-def ensure_customer(connection: Any, name: str, shop_id: int) -> int:
-    connection.execute(
-        "INSERT INTO customers (name, shop_id) VALUES (%s, %s) "
-        "ON CONFLICT DO NOTHING",
-        (name, shop_id),
+def ensure_customer(session: Session, name: str, shop_id: int) -> int:
+    session.execute(
+        insert(Customer)
+        .values(name=name, shop_id=shop_id)
+        .on_conflict_do_nothing()
     )
-    row = connection.execute(
-        "SELECT id FROM customers WHERE lower(name) = lower(%s) AND shop_id = %s",
-        (name, shop_id),
-    ).fetchone()
-    return int(row["id"])
+    customer_id = session.scalar(
+        select(Customer.id).where(
+            Customer.shop_id == shop_id,
+            func.lower(Customer.name) == name.lower(),
+        )
+    )
+    return int(customer_id)

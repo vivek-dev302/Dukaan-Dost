@@ -2,14 +2,16 @@
 
 from typing import Any
 
-from ..database import get_connection
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from ..database import SessionLocal
+from ..models import AgentLog
 
 
-def insert_agent_log(connection: Any, user_id: int, action: str, description: str) -> None:
-    """Insert a log using the caller's transaction."""
-    connection.execute(
-        "INSERT INTO agent_logs (user_id, action, description) VALUES (%s, %s, %s)",
-        (user_id, action, description),
+def insert_agent_log(session: Session, user_id: int, action: str, description: str) -> None:
+    session.add(
+        AgentLog(user_id=user_id, action=action, description=description)
     )
 
 
@@ -18,11 +20,12 @@ def get_agent_logs(
     limit: int = 100,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    with get_connection() as connection:
-        rows = connection.execute(
-            """SELECT id, action, description, created_at
-               FROM agent_logs WHERE user_id = %s
-               ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s""",
-            (user_id, limit, offset),
-        ).fetchall()
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(AgentLog.id, AgentLog.action, AgentLog.description, AgentLog.created_at)
+            .where(AgentLog.user_id == user_id)
+            .order_by(AgentLog.created_at.desc(), AgentLog.id.desc())
+            .limit(limit)
+            .offset(offset)
+        ).mappings().all()
     return [dict(row) for row in rows]

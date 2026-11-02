@@ -4,3 +4,5 @@ openai-agents[redis]
 python-dotenv
 google-auth
 psycopg[binary]
+sqlalchemy
+alembic
