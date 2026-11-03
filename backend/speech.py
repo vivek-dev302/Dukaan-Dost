@@ -2,6 +2,7 @@
 
 import io
 import os
+import re
 import subprocess
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -10,13 +11,50 @@ from pydantic import BaseModel, Field
 from sarvamai import SarvamAI
 from starlette.concurrency import run_in_threadpool
 
-from .agent import run_agent_message
+from .agent import resolve_agent_confirmation, run_agent_message
 from .auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/speech", tags=["speech"])
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 TTS_SPEAKER = "shubh_enhi_ads"
+
+AFFIRMATIVE_WORDS = {
+    "yes", "yeah", "yep", "yup", "sure", "absolutely", "definitely", "right",
+    "haan", "han", "ha", "haanji", "hanji", "jee", "ji", "bilkul",
+    "approve", "approved", "confirm", "confirmed", "okay", "ok", "please",
+    "do", "it", "this", "that", "go", "ahead", "and", "proceed", "continue",
+    "now", "change", "action", "clear", "empty", "all", "whole", "entire",
+    "list", "restock", "restocking", "record", "records", "khata", "customer",
+    "category", "entry", "payment", "delete", "remove", "add", "update", "i",
+    "kar", "karo", "kardo", "karna", "dijiye", "kijiye", "de", "den", "dena",
+    "aap", "thats", "is", "fine", "हाँ",
+    "हां", "हाँजी", "हांजी", "जी",
+}
+AFFIRMATIVE_ANCHORS = {
+    "yes", "yeah", "yep", "yup", "sure", "absolutely", "definitely", "right",
+    "haan", "han", "ha", "haanji", "hanji", "bilkul", "approve", "approved",
+    "confirm", "confirmed", "okay", "ok", "fine", "proceed", "continue", "karo",
+    "kardo", "हाँ", "हां", "हाँजी", "हांजी",
+}
+NEGATIVE_WORDS = {
+    "no", "nope", "nah", "nahi", "nahin", "na", "cancel", "reject", "decline",
+    "mat", "dont", "do", "not", "please", "it", "this", "that", "go", "ahead",
+    "and", "now", "clear", "empty", "all", "whole", "entire", "list", "restock",
+    "restocking", "record", "records", "khata", "customer", "category", "entry",
+    "payment", "delete", "remove", "add", "update", "approve", "confirm", "karo",
+    "kar", "kardo", "karna", "dijiye", "kijiye", "de", "den", "dena", "stop",
+    "जी", "नहीं", "नही", "ना",
+}
+NEGATIVE_ANCHORS = {
+    "no", "nope", "nah", "nahi", "nahin", "na", "cancel", "reject", "decline",
+    "mat", "dont", "not", "stop", "नहीं", "नही", "ना",
+}
+END_CALL_PATTERN = re.compile(
+    r"\b(?:exit|quit|hang\s+up|end\s+(?:the\s+)?call|stop\s+(?:the\s+)?call|"
+    r"close\s+(?:the\s+)?call|cut\s+(?:the\s+)?call|call\s+(?:cut|kaat|band|khatam|end|stop)|"
+    r"call\s+(?:ko\s+)?(?:band|khatam)\s+(?:kar|karo|kardo|do|dijiye))\b"
+)
 
 
 def get_sarvam_client() -> SarvamAI:
@@ -81,12 +119,55 @@ def _transcribe_audio_bytes(audio_bytes: bytes) -> dict[str, str]:
     }
 
 
+def _approval_decision(transcript: str) -> bool | None:
+    normalized = transcript.lower().replace("don't", "dont").replace("don’t", "dont")
+    normalized = re.sub(r"[^\w\s]", " ", normalized, flags=re.UNICODE)
+    words = normalized.split()
+    if not words or len(words) > 12:
+        return None
+    word_set = set(words)
+    has_affirmative_anchor = bool(word_set & AFFIRMATIVE_ANCHORS) or {"go", "ahead"} <= word_set or {"do", "it"} <= word_set or {"kar", "do"} <= word_set or {"kar", "dijiye"} <= word_set
+    if word_set <= AFFIRMATIVE_WORDS and has_affirmative_anchor:
+        return True
+    if word_set <= NEGATIVE_WORDS and word_set & NEGATIVE_ANCHORS:
+        return False
+    return None
+
+
+def _is_end_call_request(transcript: str) -> bool:
+    normalized = transcript.lower().replace("don't", "dont").replace("don’t", "dont")
+    normalized = re.sub(r"[^\w\s]", " ", normalized, flags=re.UNICODE)
+    if re.search(r"\b(?:dont|do\s+not|never|not|mat)\b", normalized):
+        return False
+    return bool(END_CALL_PATTERN.search(normalized))
+
+
 @router.post("/transcribe")
 def transcribe_audio(
     audio: UploadFile = File(...),
     user: dict = Depends(get_current_user),
 ):
     return _transcribe_audio_bytes(audio.file.read(MAX_UPLOAD_BYTES + 1))
+
+
+@router.post("/confirm/{confirmation_id}")
+async def voice_confirmation(
+    confirmation_id: str,
+    request: Request,
+    audio: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    audio_bytes = await audio.read(MAX_UPLOAD_BYTES + 1)
+    transcription = await run_in_threadpool(_transcribe_audio_bytes, audio_bytes)
+    transcript = (transcription.get("text") or "").strip()
+    if _is_end_call_request(transcript):
+        return {"status": "end_call", "transcript": transcript}
+    decision = _approval_decision(transcript)
+    if decision is None:
+        return {"status": "unclear", "transcript": transcript}
+
+    result = await resolve_agent_confirmation(confirmation_id, decision, request, user)
+    return {"transcript": transcript, "approved": decision, **result}
 
 
 @router.post("/command")
@@ -100,6 +181,8 @@ async def voice_command(
     transcript = (transcription.get("text") or "").strip()
     if not transcript:
         raise HTTPException(status_code=422, detail="No speech could be recognized. Please try again.")
+    if _is_end_call_request(transcript):
+        return {"status": "end_call", "transcript": transcript}
     agent_result = await run_agent_message(transcript, request, user)
     return {
         "transcript": transcript,

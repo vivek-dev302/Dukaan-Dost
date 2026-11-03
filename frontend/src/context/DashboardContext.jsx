@@ -184,6 +184,8 @@ export function DashboardProvider({ children }) {
       if (result.status === "confirmation_required") {
         setChatMessages((current) => [...current, { role: "user", text: transcript, source: "voice" }]);
         setPendingConfirmation(result);
+      } else if (result.status === "end_call") {
+        setChatMessages((current) => [...current, { role: "user", text: transcript, source: "voice" }]);
       } else if (result.status === "completed" && result.reply) {
         setChatMessages((current) => [
           ...current,
@@ -226,8 +228,34 @@ export function DashboardProvider({ children }) {
     } finally { setChatBusy(false); }
   }
 
-  function addChatUserMessage(text, source = "chat") {
-    setChatMessages((current) => [...current, { role: "user", text, source }]);
+  async function sendVoiceApproval(audioFormData, confirmationId) {
+    if (!confirmationId) return { status: "missing_confirmation" };
+    setChatBusy(true);
+    setChatError("");
+    try {
+      const result = await request(`/speech/confirm/${confirmationId}`, {
+        method: "POST",
+        body: audioFormData,
+      });
+      if (result.transcript) {
+        setChatMessages((current) => [...current, { role: "user", text: result.transcript, source: "voice" }]);
+      }
+      if (result.status === "unclear" || result.status === "end_call") return result;
+      if (result.status === "confirmation_required") setPendingConfirmation(result);
+      else {
+        setPendingConfirmation(null);
+        setChatMessages((current) => [...current, { role: "assistant", text: result.reply, source: "voice" }]);
+        if (result.approved) await Promise.all([refreshData(), refreshRecords()]);
+      }
+      return result;
+    } catch (reason) {
+      setChatError(reason.message);
+      if (reason.status === 404) {
+        setPendingConfirmation(null);
+        return { status: "expired" };
+      }
+      return null;
+    } finally { setChatBusy(false); }
   }
 
   const value = {
@@ -238,7 +266,7 @@ export function DashboardProvider({ children }) {
     creditDescription, setCreditDescription, creditDate, setCreditDate, editing, setEditing, selectedCustomer,
     filteredItems, filteredRestock, addCategory, addCatalogItem, addRestockItem, addCustomer, addCredit, saveEdit,
     remove, chooseCustomer, chatMessages, chatInput, setChatInput, pendingConfirmation, chatBusy, chatError,
-    sendChatMessage, sendVoiceCommand, decideChatAction, addChatUserMessage,
+    sendChatMessage, sendVoiceCommand, decideChatAction, sendVoiceApproval,
     refreshData, refreshRecords,
   };
 

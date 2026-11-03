@@ -136,6 +136,17 @@ async def confirm_agent_action(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
+    return await resolve_agent_confirmation(
+        confirmation_id, decision.approved, request, user
+    )
+
+
+async def resolve_agent_confirmation(
+    confirmation_id: str,
+    approved: bool,
+    request: Request,
+    user: dict,
+) -> dict[str, Any]:
     key = _pending_run_key(user["id"], user["shop_id"], confirmation_id)
     serialized_state = await request.app.state.redis.getdel(key)
     if serialized_state is None:
@@ -145,7 +156,7 @@ async def confirm_agent_action(
     )
     interruptions = state.get_interruptions()
     for interruption in interruptions:
-        if decision.approved:
+        if approved:
             state.approve(interruption)
         else:
             state.reject(interruption)

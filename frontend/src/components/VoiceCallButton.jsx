@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
-import { request, requestAudio } from "../api/client.js";
+import { requestAudio } from "../api/client.js";
+import VoiceVisualizer from "./VoiceVisualizer.jsx";
 import { useDashboard } from "../context/DashboardContext.jsx";
 
 const SILENCE_RMS_THRESHOLD = 0.025;
 const SILENCE_DURATION_MS = 2000;
-const MAX_RECORDING_MS = 28000;
+const MAX_RECORDING_MS = 15000;
 
 const APPROVAL_TEMPLATES = [
   "मैं ये change करने जा रहा हूँ: {action}. Approve करने के लिए हाँ जी कहें, cancel करने के लिए नहीं कहें.",
@@ -27,30 +28,23 @@ const RETRY_TEMPLATES = [
   "आपकी बात पूरी नहीं हो पाई क्योंकि {issue}. चलिए फिर से try करते हैं.",
   "एक छोटी सी दिक्कत हुई: {issue}. मैं फिर से सुनने के लिए तैयार हूँ.",
 ];
+const END_CALL_TEMPLATES = [
+  "ठीक है, call यहीं खत्म करते हैं. {pending} फिर मिलेंगे.",
+  "समझ गया, अभी call बंद कर रहा हूँ. {pending} धन्यवाद.",
+  "बिल्कुल, Dukaan Dost call अब बंद कर रहा है. {pending} फिर बात करेंगे.",
+  "ठीक है, यहीं रुकते हैं. {pending} आपका दिन अच्छा रहे.",
+  "आपकी बात समझ गया, call खत्म कर रहा हूँ. {pending} अलविदा.",
+];
 
 function randomTemplate(templates, values = {}) {
   const template = templates[Math.floor(Math.random() * templates.length)];
-  return template.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? "");
+  return template.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? "").replace(/\s+/g, " ").trim();
 }
 
-const affirmativeWords = new Set([
-  "yes", "yeah", "yep", "yup", "haan", "han", "ha", "ji", "jee", "bilkul",
-  "approve", "approved", "confirm", "confirmed", "okay", "ok", "please",
-]);
-const affirmativeAnchors = new Set([
-  "yes", "yeah", "yep", "yup", "haan", "han", "ha", "bilkul", "approve", "approved", "confirm", "confirmed", "okay", "ok",
-]);
-const negativeWords = new Set([
-  "no", "nope", "nahi", "nahin", "na", "cancel", "reject", "decline", "mat", "karo",
-]);
-const negativeAnchors = new Set(["no", "nope", "nahi", "nahin", "na", "cancel", "reject", "decline"]);
-
-function approvalDecision(text) {
-  const words = text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").trim().split(/\s+/).filter(Boolean);
-  if (!words.length || words.length > 6) return null;
-  if (words.every((word) => affirmativeWords.has(word)) && words.some((word) => affirmativeAnchors.has(word))) return true;
-  if (words.every((word) => negativeWords.has(word)) && words.some((word) => negativeAnchors.has(word))) return false;
-  return null;
+function endCallGoodbye(hasPendingApproval) {
+  return randomTemplate(END_CALL_TEMPLATES, {
+    pending: hasPendingApproval ? "आपका pending action dashboard पर रहेगा." : "",
+  });
 }
 
 function summarizeAction({ tool = "protected action", arguments: args = {} }) {
@@ -93,17 +87,21 @@ export default function VoiceCallButton() {
     pendingConfirmation,
     chatBusy,
     sendVoiceCommand,
-    decideChatAction,
-    addChatUserMessage,
+    sendVoiceApproval,
   } = useDashboard();
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState("closed");
   const [error, setError] = useState("");
   const [lastTranscript, setLastTranscript] = useState("");
+  const [audioLevel, setAudioLevel] = useState(0);
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
   const audioContextRef = useRef(null);
+  const playbackContextRef = useRef(null);
+  const playbackAnalyserRef = useRef(null);
+  const playbackSourceRef = useRef(null);
+  const playbackFrameRef = useRef(null);
   const silenceTimerRef = useRef(null);
   const maxTimerRef = useRef(null);
   const audioRef = useRef(null);
@@ -111,6 +109,8 @@ export default function VoiceCallButton() {
   const callOpenRef = useRef(false);
   const sendingRef = useRef(false);
   const modeRef = useRef("command");
+  const pendingConfirmationRef = useRef(pendingConfirmation);
+  pendingConfirmationRef.current = pendingConfirmation;
 
   function stopRecording() {
     if (silenceTimerRef.current) window.clearInterval(silenceTimerRef.current);
@@ -125,28 +125,38 @@ export default function VoiceCallButton() {
       audioContextRef.current.close().catch(() => {});
     }
     audioContextRef.current = null;
+    setAudioLevel(0);
   }
 
   function stopSpeech() {
+    if (playbackFrameRef.current) cancelAnimationFrame(playbackFrameRef.current);
+    playbackFrameRef.current = null;
+    playbackSourceRef.current?.disconnect();
+    playbackAnalyserRef.current?.disconnect();
+    playbackSourceRef.current = null;
+    playbackAnalyserRef.current = null;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
     }
     if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     audioUrlRef.current = null;
+    setAudioLevel(0);
   }
 
   function endCall() {
     callOpenRef.current = false;
     stopRecording();
     stopSpeech();
+    playbackContextRef.current?.close().catch(() => {});
+    playbackContextRef.current = null;
     setOpen(false);
     setPhase("closed");
     setError("");
   }
 
   async function speak(text) {
-    setPhase("speaking");
+    setPhase("preparing_speech");
     try {
       const hasHindiScript = /[\u0900-\u097F]/.test(text);
       const blob = await requestAudio("/speech/speak", {
@@ -159,20 +169,60 @@ export default function VoiceCallButton() {
       const player = new Audio(url);
       audioUrlRef.current = url;
       audioRef.current = player;
+      const playbackContext = playbackContextRef.current;
+      try {
+        if (playbackContext) {
+          const analyser = playbackContext.createAnalyser();
+          analyser.fftSize = 256;
+          const source = playbackContext.createMediaElementSource(player);
+          source.connect(analyser);
+          analyser.connect(playbackContext.destination);
+          playbackAnalyserRef.current = analyser;
+          playbackSourceRef.current = source;
+          const samples = new Uint8Array(analyser.fftSize);
+          const updateLevel = () => {
+            if (playbackAnalyserRef.current !== analyser) return;
+            analyser.getByteTimeDomainData(samples);
+            let energy = 0;
+            for (const sample of samples) {
+              const normalized = (sample - 128) / 128;
+              energy += normalized * normalized;
+            }
+            setAudioLevel(Math.min(1, Math.sqrt(energy / samples.length) * 7));
+            playbackFrameRef.current = requestAnimationFrame(updateLevel);
+          };
+          playbackFrameRef.current = requestAnimationFrame(updateLevel);
+          await playbackContext.resume();
+        }
+      } catch {
+        playbackSourceRef.current?.disconnect();
+        playbackAnalyserRef.current?.disconnect();
+        playbackSourceRef.current = null;
+        playbackAnalyserRef.current = null;
+      }
       return await new Promise((resolve) => {
         const finish = (played) => {
           if (audioUrlRef.current === url) {
+            if (playbackFrameRef.current) cancelAnimationFrame(playbackFrameRef.current);
+            playbackFrameRef.current = null;
+            playbackSourceRef.current?.disconnect();
+            playbackAnalyserRef.current?.disconnect();
+            playbackSourceRef.current = null;
+            playbackAnalyserRef.current = null;
             URL.revokeObjectURL(url);
             audioUrlRef.current = null;
             audioRef.current = null;
+            setAudioLevel(0);
           }
           resolve(played);
         };
         player.onended = () => finish(true);
         player.onerror = () => finish(false);
+        setPhase("speaking");
         player.play().catch(() => finish(false));
       });
     } catch {
+      stopSpeech();
       return false;
     }
   }
@@ -241,6 +291,7 @@ export default function VoiceCallButton() {
           energy += normalized * normalized;
         }
         const rms = Math.sqrt(energy / samples.length);
+        setAudioLevel(Math.min(1, rms * 7));
         if (rms >= SILENCE_RMS_THRESHOLD) {
           speechDetected = true;
           silenceStartedAt = null;
@@ -277,7 +328,13 @@ export default function VoiceCallButton() {
       return;
     }
     setLastTranscript(result.transcript);
+    if (result.status === "end_call") {
+      await speak(endCallGoodbye(Boolean(pendingConfirmationRef.current)));
+      endCall();
+      return;
+    }
     if (result.status === "confirmation_required") {
+      pendingConfirmationRef.current = result;
       await askForApproval(result);
     } else {
       await speakAndListen(result.reply, "command");
@@ -286,26 +343,25 @@ export default function VoiceCallButton() {
 
   async function submitApproval(formData) {
     setPhase("checking_approval");
-    const response = await request("/speech/transcribe", { method: "POST", body: formData });
+    const confirmationId = pendingConfirmationRef.current?.confirmation_id;
+    const result = await sendVoiceApproval(formData, confirmationId);
     if (!callOpenRef.current) return;
-    const transcript = response.text?.trim() || "";
-    setLastTranscript(transcript);
-    if (!transcript) {
-      await recoverAndListen("आपका जवाब सुनाई नहीं दिया", "approval");
+    if (result?.status === "confirmation_required") pendingConfirmationRef.current = result;
+    else if (result && result.status !== "unclear" && result.status !== "end_call") pendingConfirmationRef.current = null;
+    if (result?.transcript) setLastTranscript(result.transcript);
+    if (result?.status === "end_call") {
+      await speak(endCallGoodbye(true));
+      endCall();
       return;
     }
-
-    const decision = approvalDecision(transcript);
-    if (decision === null) {
-      addChatUserMessage(transcript, "voice");
-      await speakAndListen(randomTemplate(UNCLEAR_TEMPLATES, { heard: transcript }), "approval");
+    if (result?.status === "unclear") {
+      await speakAndListen(randomTemplate(UNCLEAR_TEMPLATES, { heard: result.transcript || "आपका जवाब" }), "approval");
       return;
     }
-
-    const result = await decideChatAction(decision, transcript, "voice");
-    if (!callOpenRef.current) return;
     if (!result) {
       await recoverAndListen("आपका approval save नहीं हो पाया", pendingConfirmation ? "approval" : "command");
+    } else if (result.status === "expired" || result.status === "missing_confirmation") {
+      await speakAndListen("यह confirmation expire हो गया है. कृपया अपना request फिर से बताइए.", "command");
     } else if (result.status === "confirmation_required") {
       await askForApproval(result);
     } else {
@@ -346,6 +402,11 @@ export default function VoiceCallButton() {
     callOpenRef.current = true;
     setOpen(true);
     setLastTranscript("");
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      playbackContextRef.current ??= new AudioContextClass();
+      await playbackContextRef.current.resume().catch(() => {});
+    }
     if (pendingConfirmation) await askForApproval(pendingConfirmation);
     else await startRecording("command");
   }
@@ -354,6 +415,8 @@ export default function VoiceCallButton() {
     callOpenRef.current = false;
     stopRecording();
     stopSpeech();
+    playbackContextRef.current?.close().catch(() => {});
+    playbackContextRef.current = null;
   }, []);
 
   const phaseText = {
@@ -361,9 +424,14 @@ export default function VoiceCallButton() {
     approval_listening: "Say yes to approve or no to cancel. You can also use the chat buttons.",
     sending: "Sending your command…",
     checking_approval: "Checking your answer…",
+    preparing_speech: "Dukaan Dost is preparing a reply…",
     speaking: "Dukaan Dost is speaking…",
     error,
   }[phase];
+  const visualizerMode = phase === "speaking" ? "speaking"
+    : phase === "listening" || phase === "approval_listening" ? "listening"
+    : phase === "sending" || phase === "checking_approval" || phase === "preparing_speech" ? "processing"
+    : "idle";
 
   return <>
     <button className="secondary mic-button" type="button" aria-label="Start voice call"
@@ -373,9 +441,7 @@ export default function VoiceCallButton() {
     {open && <div className="voice-overlay">
       <section className="voice-dialog" role="dialog" aria-modal="true" aria-labelledby="voice-call-title">
         <button className="text-button voice-close" type="button" aria-label="End voice call" onClick={endCall}>×</button>
-        <span className={`voice-mic ${phase === "listening" || phase === "approval_listening" ? "is-recording" : ""}`} aria-hidden="true">
-          <svg viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5M8.5 21.5h7" /></svg>
-        </span>
+        <VoiceVisualizer mode={visualizerMode} level={audioLevel} />
         <h2 id="voice-call-title">Dukaan Dost voice call</h2>
         <p className="voice-help" role="status">{phaseText}</p>
         {lastTranscript && <p className="voice-transcript">Heard: {lastTranscript}</p>}

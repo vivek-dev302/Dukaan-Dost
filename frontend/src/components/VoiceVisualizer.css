@@ -1,0 +1,44 @@
+.voice-visualizer {
+  display: flex;
+  width: 116px;
+  height: 78px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0 auto 14px;
+}
+
+.voice-visualizer span {
+  width: 8px;
+  min-height: 7px;
+  border-radius: 999px;
+  background: var(--forest);
+  box-shadow: 0 0 14px rgb(49 86 65 / 14%);
+  transition: height 90ms ease-out, background-color 180ms ease;
+}
+
+.voice-visualizer-listening span { background: var(--danger); }
+.voice-visualizer-speaking span { background: #b18a48; }
+
+.voice-visualizer-processing span {
+  animation: voice-processing 850ms ease-in-out infinite alternate;
+  animation-delay: calc(var(--bar-index, 0) * 90ms);
+}
+
+.voice-visualizer-processing span:nth-child(1) { --bar-index: 0; }
+.voice-visualizer-processing span:nth-child(2) { --bar-index: 1; }
+.voice-visualizer-processing span:nth-child(3) { --bar-index: 2; }
+.voice-visualizer-processing span:nth-child(4) { --bar-index: 3; }
+.voice-visualizer-processing span:nth-child(5) { --bar-index: 4; }
+.voice-visualizer-processing span:nth-child(6) { --bar-index: 5; }
+.voice-visualizer-processing span:nth-child(7) { --bar-index: 6; }
+
+@keyframes voice-processing {
+  from { opacity: .45; transform: scaleY(.55); }
+  to { opacity: 1; transform: scaleY(1.45); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-visualizer span { transition: none; }
+  .voice-visualizer-processing span { animation: none; }
+}
