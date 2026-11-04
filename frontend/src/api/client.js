@@ -1,4 +1,8 @@
-const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const configuredApiUrl = import.meta.env.VITE_API_URL;
+if (import.meta.env.PROD && !configuredApiUrl) {
+  throw new Error("Set VITE_API_URL to the hosted backend URL before building the frontend.");
+}
+const API = (configuredApiUrl || "http://localhost:8000").replace(/\/+$/, "");
 
 export async function request(path, options = {}) {
   const isFormData = options.body instanceof FormData;

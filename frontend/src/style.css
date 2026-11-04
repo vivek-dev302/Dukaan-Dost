@@ -233,6 +233,12 @@ tbody tr:hover { background: #f8f6f0; }
 .chat-form button { display: inline-flex; min-width: 92px; align-items: center; justify-content: center; gap: 10px; }
 .mic-button { width: 46px; min-width: 46px !important; padding: 9px !important; }
 .mic-button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.voice-launch-button { display: grid; min-width: 230px; justify-items: start; gap: 2px; border-color: #a97a37; border-radius: 9px; padding: 13px 19px; color: #fffdf8; background: var(--forest); box-shadow: 0 7px 20px rgb(32 63 52 / 18%); text-align: left; }
+.voice-launch-button:hover { border-color: #c49a58; background: var(--forest-deep); box-shadow: 0 9px 24px rgb(32 63 52 / 24%); }
+.voice-launch-button svg { width: 21px; height: 21px; grid-row: 1 / span 2; align-self: center; margin-right: 10px; fill: none; stroke: #e2c68e; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.voice-launch-button span { grid-column: 2; }
+.voice-launch-button span:first-of-type { font-size: 14px; }
+.voice-launch-button .voice-launch-hint { color: #d2d9d1; font-size: 11px; font-weight: 400; }
 .assistant-footnote { margin: 0; border-top: 1px solid #e9e5dc; padding: 10px 18px 12px; color: #81857b; font-size: 10px; text-align: center; }
 .voice-overlay { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 18px; background: rgb(23 32 27 / 45%); }
 .voice-dialog { position: relative; width: min(100%, 420px); border: 1px solid var(--line); border-radius: 10px; padding: 30px 24px 22px; background: var(--surface); box-shadow: 0 18px 60px rgb(20 30 25 / 20%); text-align: center; }

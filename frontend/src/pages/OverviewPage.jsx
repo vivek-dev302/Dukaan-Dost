@@ -7,6 +7,7 @@ import CreditTable from "../components/CreditTable.jsx";
 import Summary from "../components/Summary.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import EmptyState from "../components/EmptyState.jsx";
+import VoiceCallButton from "../components/VoiceCallButton.jsx";
 
 export default function OverviewPage() {
   const { items, categories, restock, customers, records, initialLoading, saving, setEditing, remove } = useDashboard();
@@ -15,7 +16,7 @@ export default function OverviewPage() {
   const totalKhata = customers.reduce((sum, customer) => sum + customer.total_paise, 0);
   return <section>
     <PageHeader eyebrow="Your shop at a glance" title={`Welcome back, ${firstName}`} description="A quick look at the things you keep, the goods to order, and the credit on your books."
-      action={<Link className="button-link" to="/assistant">Ask the assistant <span aria-hidden="true">↗</span></Link>} />
+      action={<VoiceCallButton prominent />} />
     <div className="summary-grid">
       <Summary label="Catalog items" value={initialLoading ? "—" : items.length} detail="In your item reference" />
       <Summary label="To restock" value={initialLoading ? "—" : restock.length} detail="On the next order list" />
