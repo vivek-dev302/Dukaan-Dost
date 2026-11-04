@@ -435,7 +435,7 @@ export default function VoiceCallButton({ prominent = false }) {
     : "idle";
 
   return <>
-    <button className={prominent ? "voice-launch-button" : "secondary mic-button"} type="button" aria-label="Start voice call"
+    <button className={prominent ? "voice-launch-button" : "secondary mic-button"} type="button" aria-label={prominent ? "Talk to your assistant" : "Start voice call"}
       title="Start voice call" disabled={chatBusy} onClick={beginCall}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2.5" width="6" height="12" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5M8.5 21.5h7" /></svg>
       {prominent && <><span>Talk to your assistant</span><span className="voice-launch-hint">Start a voice call</span></>}

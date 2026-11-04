@@ -6,7 +6,7 @@ import EmptyState from "../components/EmptyState.jsx";
 export default function RestockingPage() {
   const { categories, filteredRestock, restock, initialLoading, saving, restockName, setRestockName, restockCategory, setRestockCategory,
     addRestockItem, restockFilter, setRestockFilter, remove } = useDashboard();
-  return <section>
+  return <section className="restocking-page">
     <PageHeader eyebrow="The next trip to the wholesaler" title="Restocking list" description="Keep a running note of what the shop needs. Add anything, even if it is not in the catalog." />
     <div className="workspace-grid">
       <div className="workspace-main">
@@ -28,7 +28,8 @@ export default function RestockingPage() {
       </div>
       <aside className="workspace-aside">
         <div className="panel ledger-panel entry-form-panel">
-          <div className="restock-entry-copy"><span className="eyebrow">Make a note</span><h3>What should we pick up?</h3></div>
+          <div className="restock-entry-copy"><span className="eyebrow">Make a note</span><h3>What should we pick up?</h3>
+            <p className="muted-copy">Add anything, even if it is not in the catalog.</p></div>
           {initialLoading ? <p className="muted-copy">Loading categories…</p> : categories.length === 0 ? <p>Add a category on the Items page first.</p> : <form onSubmit={addRestockItem} className="stack-form">
             <label>Item name<input required value={restockName} onChange={(event) => setRestockName(event.target.value)} placeholder="e.g. Cooking oil" /></label>
             <label>Category<select required value={restockCategory} onChange={(event) => setRestockCategory(event.target.value)}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>

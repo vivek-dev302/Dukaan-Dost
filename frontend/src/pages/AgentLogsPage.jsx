@@ -43,7 +43,7 @@ export default function AgentLogsPage() {
     }
   }, []);
 
-  return <section>
+  return <section className="agent-logs-page">
     <PageHeader eyebrow="A record of changes" title="Agent activity" description="Review the updates your assistant has made to the shop's records."
       action={<button className="secondary" disabled={loading} onClick={() => loadMore(0)}>Refresh</button>} />
     {error && <p role="alert">{error}</p>}
@@ -52,7 +52,7 @@ export default function AgentLogsPage() {
     {!!logs.length && <div className="panel ledger-panel activity-panel"><div className="table-scroll"><table className="activity-table">
       <thead><tr><th>When</th><th>Action</th><th>What changed</th></tr></thead>
       <tbody>{logs.map((log) => <tr key={log.id}>
-        <td>{displayTime(log.created_at)}</td><td>{log.action.replaceAll("_", " ").replaceAll(".", " · ")}</td><td>{log.description}</td>
+        <td data-label="When">{displayTime(log.created_at)}</td><td data-label="Action">{log.action.replaceAll("_", " ").replaceAll(".", " · ")}</td><td data-label="What changed">{log.description}</td>
       </tr>)}</tbody>
     </table></div></div>}
     {hasMore && !!logs.length && <button className="secondary load-more" disabled={loading} onClick={loadMore}>

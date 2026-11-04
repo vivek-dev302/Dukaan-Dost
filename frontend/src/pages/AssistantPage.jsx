@@ -13,7 +13,7 @@ export default function AssistantPage() {
   const { chatMessages, chatInput, setChatInput, pendingConfirmation, chatBusy, chatError,
     sendChatMessage, decideChatAction } = useDashboard();
 
-  return <section>
+  return <section className="assistant-page">
     <PageHeader eyebrow="A helping hand at the counter" title="Shop assistant" description="Ask about your shop or give a task. Changes to your records wait for your approval." />
     <div className="panel assistant-panel">
       <div className="assistant-heading">

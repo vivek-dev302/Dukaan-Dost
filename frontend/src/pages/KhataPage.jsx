@@ -24,6 +24,7 @@ export default function KhataPage() {
             <div><span className="eyebrow">{selectedCustomer ? "Customer account" : "People"}</span><h3>{selectedCustomer ? selectedCustomer.name : "Customers"}</h3></div>
             <div className="list-heading-actions">
               {selectedCustomer ? <>
+                <span className="customer-balance"><small>Outstanding</small><strong>{initialLoading ? "—" : money(selectedCustomer.total_paise)}</strong></span>
                 <span className="count-mark" aria-label={`${records.length} credit entries`}>{initialLoading ? "—" : records.length}</span>
                 <button type="button" className="secondary compact-button" onClick={() => { setSelectedCustomerId(null); setRecordDate(""); setCustomerSearch(""); }}>Back to customers</button>
               </> : <>

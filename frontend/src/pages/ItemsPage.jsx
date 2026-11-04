@@ -16,7 +16,7 @@ export default function ItemsPage() {
   const categoryItems = items.filter((item) => item.category_id === selectedCategoryId);
   const visibleItems = categoryItems.filter((item) => item.name.toLowerCase().includes(categorySearch.trim().toLowerCase()));
 
-  return <section>
+  return <section className="items-page">
     <PageHeader eyebrow="Your reference catalog" title="Items & categories" description="Keep a simple list of the products your shop carries. Quantities are not tracked here." />
     <div className="workspace-grid">
       <div className="workspace-main">

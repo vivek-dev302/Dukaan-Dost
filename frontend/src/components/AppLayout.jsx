@@ -57,7 +57,9 @@ export default function AppLayout() {
     </nav>
     <div className="content-wrap">
       {toastMessage && <div className={error ? "toast toast-error" : "toast"} role={error ? "alert" : "status"}>
-        <span className="toast-mark" aria-hidden="true">{error ? "!" : "✓"}</span>
+        <span className="toast-mark" aria-hidden="true">{error
+          ? <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 8v5m0 3.5h.01" /></svg>
+          : <svg viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7" /></svg>}</span>
         <span className="toast-copy">{toastMessage}</span>
         <button className="toast-dismiss" aria-label="Dismiss notification" onClick={() => { setError(""); setNotice(""); }}>×</button>
       </div>}
