@@ -31,7 +31,7 @@ export default function AssistantPage() {
         <span className="eyebrow">Your approval is needed</span><h3>Review this change</h3><p>{pendingConfirmation.message}</p>
         {pendingConfirmation.actions.map((action, index) => <div className="pending-action" key={index}>
           <strong>{readableLabel(action.tool || "Protected action")}</strong>
-          <dl>{Object.entries(action.arguments || {}).map(([key, value]) => <div key={key}>
+          <dl>{Object.entries(action.arguments || {}).filter(([, value]) => value != null).map(([key, value]) => <div key={key}>
             <dt>{readableLabel(key)}</dt><dd>{typeof value === "object" && value !== null ? JSON.stringify(value) : String(value)}</dd>
           </div>)}</dl>
         </div>)}

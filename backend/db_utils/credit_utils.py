@@ -42,7 +42,7 @@ def add_credit_record(
                 session,
                 agent_user_id,
                 "credit_record.added",
-                f"Added credit entry #{record.id} for {customer}: ₹{amount_paise / 100:.2f}.",
+                f"Added credit entry for {customer}: ₹{amount_paise / 100:.2f}.",
             )
         return record.id
 
@@ -152,7 +152,7 @@ def update_credit_record(
                 session,
                 agent_user_id,
                 "credit_record.updated",
-                f"Updated credit entry #{record_id} for {customer or old_customer.name} ({', '.join(changed_fields)}).",
+                f"Updated credit entry for {customer or old_customer.name} ({', '.join(changed_fields)}).",
             )
         return True
 
@@ -180,7 +180,7 @@ def delete_credit_record(
                 session,
                 agent_user_id,
                 "credit_record.deleted",
-                f"Deleted credit entry #{record_id} for {customer.name}: ₹{amount_paise / 100:.2f}.",
+                f"Deleted credit entry for {customer.name}: ₹{amount_paise / 100:.2f}.",
             )
         return True
 

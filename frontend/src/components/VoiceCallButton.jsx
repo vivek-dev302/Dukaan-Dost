@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { requestAudio } from "../api/client.js";
 import VoiceVisualizer from "./VoiceVisualizer.jsx";
 import { useDashboard } from "../context/DashboardContext.jsx";
@@ -439,7 +440,7 @@ export default function VoiceCallButton({ prominent = false }) {
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2.5" width="6" height="12" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5M8.5 21.5h7" /></svg>
       {prominent && <><span>Talk to your assistant</span><span className="voice-launch-hint">Start a voice call</span></>}
     </button>
-    {open && <div className="voice-overlay">
+    {open && createPortal(<div className="voice-overlay">
       <section className="voice-dialog" role="dialog" aria-modal="true" aria-labelledby="voice-call-title">
         <button className="text-button voice-close" type="button" aria-label="End voice call" onClick={endCall}>×</button>
         <VoiceVisualizer mode={visualizerMode} level={audioLevel} />
@@ -454,6 +455,6 @@ export default function VoiceCallButton({ prominent = false }) {
           <button className="secondary" type="button" onClick={endCall}>End call</button>
         </div>
       </section>
-    </div>}
+    </div>, document.body)}
   </>;
 }

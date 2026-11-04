@@ -6,7 +6,13 @@ import EmptyState from "../components/EmptyState.jsx";
 const PAGE_SIZE = 100;
 
 function displayTime(value) {
-  return new Date(`${value.replace(" ", "T")}Z`).toLocaleString();
+  const timestamp = value.trim().replace(" ", "T");
+  const hasTimezone = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(timestamp);
+  const isoTimestamp = timestamp
+    .replace(/([+-]\d{2})(\d{2})$/, "$1:$2")
+    .replace(/([+-]\d{2})$/, "$1:00");
+  const parsed = new Date(hasTimezone ? isoTimestamp : `${isoTimestamp}Z`);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
 export default function AgentLogsPage() {
